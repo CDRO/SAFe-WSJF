@@ -1,0 +1,8 @@
+﻿Summary,Issue key,Issue id,Issue Type,Status,Project key,Assignee,Created,Labels,Labels,Description,Custom field (Team),Custom field (User Business Value),Custom field (Risk Reduction-Opportunity Enablement Value),Custom field (Time Criticality),Custom field (Job Size),Custom field (WSJF),Sprint,Sprint
+Self-Service Portal für Kunden,ART-101,10101,Feature,Funnel,ART,Anna Muster,01/Sep/26 9:00 AM,portal,kunden,"Kunden sollen Termine selbst buchen.
+Mit Bestätigung per Mail, ""sofort"".",Team Blau,8,3,5,5,3.2,PI 26.4 S1,PI 26.4 S2
+Archivierung Altdaten,ART-102,10102,Feature,Analyzing,ART,,02/Sep/26 9:00 AM,informell,,,Team Rot,,,,,,,
+Login mit SSO,ART-103,10103,Enabler,Backlog,ART,Ben Beispiel,03/Sep/26 9:00 AM,,,SSO über Entra ID,Team Blau,5,8,13,8,3.25,,
+Gesetzliche Meldepflicht 2027,ART-104,10104,Feature,Backlog,ART,,04/Sep/26 9:00 AM,compliance,,,Team Grün,100,100,100,1,300,,
+Dashboard für Leitung,ART-105,10105,Feature,Funnel,ART,Clara Test,05/Sep/26 9:00 AM,,,"Kennzahlen, Grafiken; Export",Team Rot,3,,,,,,
+Schnittstelle Labor,ART-110,10110,Feature,Implementing,ART,,06/Sep/26 9:00 AM,,,,Team Grün,13,5,8,13,2,,

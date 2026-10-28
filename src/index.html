@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SAFe WSJF</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232563eb'/%3E%3Cpath d='M3 12h3V8H3zm4 0h3V5H7zm4 0h2V3h-2z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <button type="button" id="trainBtn" class="train-btn" aria-haspopup="menu" title="Zug oder Portfolio wechseln (Alt+0)">
+      <span class="train-icon" aria-hidden="true">▤</span>
+      <span id="trainName" data-i18n-skip></span>
+      <span aria-hidden="true">▾</span>
+    </button>
+    <nav class="menus">
+      <button type="button" id="csvMenuBtn" aria-haspopup="menu">CSV</button>
+      <button type="button" id="dbMenuBtn" aria-haspopup="menu">Datenbank</button>
+      <button type="button" id="settingsBtn">Einstellungen</button>
+      <button type="button" id="prefsBtn">Präferenzen</button>
+      <button type="button" id="helpBtn">Hilfe</button>
+    </nav>
+    <input type="search" id="search" placeholder="Suchen: Schlüssel, Titel, Team, Label" aria-label="Suchen">
+  </header>
+
+  <div id="banner" class="banner" hidden>
+    <span id="bannerText"></span>
+    <button type="button" id="bannerBtn" class="primary"></button>
+  </div>
+
+  <section id="welcome" class="welcome" hidden>
+    <h1>SAFe WSJF</h1>
+    <p>Priorisieren nach Weighted Shortest Job First, direkt im Browser: kein Server, keine Installation. Die Daten liegen
+      in einer SQLite-Datei je Zug oder Portfolio, die Tickets kommen als CSV-Export aus Jira und die Werte gehen in die CSV zurück.</p>
+    <form id="welcomeForm" class="welcome-form">
+      <label for="welcomeName">Name des Zugs oder Portfolios</label>
+      <div class="row">
+        <input id="welcomeName" required maxlength="60" placeholder="z. B. ART Plattform">
+        <button type="submit" class="primary">Anlegen</button>
+      </div>
+    </form>
+    <p class="welcome-alt">oder <button type="button" id="welcomeOpenBtn" class="link">vorhandene Datenbankdatei öffnen…</button></p>
+  </section>
+
+  <main id="board" hidden>
+    <section id="emptyState" class="empty-state" hidden>
+      <h2>Noch keine CSV eingelesen</h2>
+      <p>Exportiere die Tickets aus Jira als CSV (alle Felder) und lies sie hier ein. Beim ersten Mal legst du fest, welche
+        Spalte welchen Wert enthält; die Zuordnung gilt danach für jeden weiteren Export dieses Zugs.</p>
+      <button type="button" id="emptyImportBtn" class="primary">CSV einlesen…</button>
+    </section>
+
+    <div id="dropZones" class="drop-zones" aria-hidden="true">
+      <div class="drop-zone zone-required" data-zone="required"><b>Erforderlich</b><span>immer oben, feste Werte</span></div>
+      <div class="drop-zone zone-hidden" data-zone="hidden"><b>Ausblenden</b><span>nicht bewerten</span></div>
+      <div class="drop-zone zone-trash" data-zone="clear"><b>Werte löschen</b><span>alle vier Werte leeren</span></div>
+    </div>
+
+    <div id="pairs" class="pairs">
+      <section class="pair" data-grid="1">
+        <aside class="pool" data-pool="1">
+          <h2>Offen <span class="count" id="pool1Count"></span></h2>
+          <div class="pool-list" id="pool1"></div>
+        </aside>
+        <div class="grid-wrap">
+          <div class="grid-title">
+            <span class="axis-x">Direkter Nutzen (UBV) →</span>
+            <span class="axis-y">↓ Zukünftiger Nutzen (RROE)</span>
+          </div>
+          <div class="grid" id="grid1" data-grid="1"></div>
+        </div>
+      </section>
+
+      <section class="pair" data-grid="2">
+        <aside class="pool" data-pool="2">
+          <h2>Offen <span class="count" id="pool2Count"></span></h2>
+          <div class="pool-list" id="pool2"></div>
+        </aside>
+        <div class="grid-wrap">
+          <div class="grid-title">
+            <span class="axis-x">Dringlichkeit (TC) →</span>
+            <span class="axis-y">↓ Dauer (Job Size)</span>
+          </div>
+          <div class="grid" id="grid2" data-grid="2"></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="ranking">
+      <div class="ranking-head">
+        <h2>Priorisierte Liste <span class="count" id="rankCount"></span></h2>
+        <div class="ranking-actions">
+          <span id="labelToggles"></span>
+          <button type="button" id="writeCsvBtn" class="primary">In CSV zurückschreiben</button>
+        </div>
+      </div>
+      <table class="rank-table">
+        <thead>
+          <tr>
+            <th class="num">#</th><th>Schlüssel</th><th>Zusammenfassung</th><th>Team</th>
+            <th class="num" title="Direkter Nutzen">UBV</th><th class="num" title="Zukünftiger Nutzen">RROE</th>
+            <th class="num" title="Dringlichkeit">TC</th><th class="num" title="Dauer">Job Size</th><th class="num">WSJF</th>
+          </tr>
+        </thead>
+        <tbody id="rankBody"></tbody>
+      </table>
+
+      <details id="hiddenBox" class="side-box">
+        <summary>Ausgeblendet <span class="count" id="hiddenCount"></span></summary>
+        <div class="side-actions"><button type="button" id="showAllBtn">Alle wieder einblenden</button></div>
+        <ul id="hiddenList" class="plain-list"></ul>
+      </details>
+
+      <details id="goneBox" class="side-box" hidden>
+        <summary>Nicht mehr in der CSV <span class="count" id="goneCount"></span></summary>
+        <p class="hint">Diese Tickets fehlen im zuletzt eingelesenen Export. Sie werden nicht zurückgeschrieben.</p>
+        <div class="side-actions"><button type="button" id="removeGoneBtn">Alle entfernen</button></div>
+        <ul id="goneList" class="plain-list"></ul>
+      </details>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <span id="status" data-state="saved" data-i18n-skip></span>
+    <span id="fileStatus" data-i18n-skip></span>
+    <span class="spacer"></span>
+    <span id="csvStatus" data-i18n-skip></span>
+    <span id="version" class="version" data-i18n-skip></span>
+  </footer>
+
+  <div id="menu" class="menu" role="menu" hidden></div>
+  <dialog id="dialog" class="dialog"></dialog>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <template id="helpTemplate">
+    <h2>Hilfe</h2>
+    <h3>Ablauf</h3>
+    <ol>
+      <li>Je Agile Release Train oder Portfolio einen <b>Zug</b> anlegen (Menü links oben). Jeder Zug hat seine eigene Datenbank.</li>
+      <li><b>CSV → CSV einlesen…</b>: den Jira-Export wählen und beim ersten Mal die Spalten zuordnen.</li>
+      <li>Tickets in die zwei Raster ziehen: oben <b>Direkter Nutzen × Zukünftiger Nutzen</b>, unten <b>Dringlichkeit × Dauer</b>. Ein Klick auf ein Ticket öffnet die Werte zum Auswählen (auch mit der Tastatur).</li>
+      <li>Die <b>priorisierte Liste</b> ordnet nach WSJF = (UBV + RROE + TC) / Job Size. Erforderliche Tickets stehen immer oben.</li>
+      <li><b>In CSV zurückschreiben</b>: die Werte gehen in die eingelesene Datei (Edge, Chrome) oder als Download mit gleichem Aufbau (Firefox). Die Datei lässt sich danach in Jira wieder importieren.</li>
+    </ol>
+    <h3>Wo liegen die Daten?</h3>
+    <p>Jede Änderung landet sofort im Browser-Speicher. Mit <b>Datenbank → Datenbankdatei anlegen…</b> schreibt die App zusätzlich in eine
+      <code>.sqlite</code>-Datei, die du sichern und weitergeben kannst. Nach einem Neustart des Browsers fragt er einmal um Erlaubnis
+      (<b>Mit Datei verbinden</b>).</p>
+    <h3>Erneut einlesen</h3>
+    <p>Ein neuer Export desselben Zugs wird mit dem Stand hier zusammengeführt: Was du hier nicht geändert hast, kommt aus der CSV;
+      deine eigenen Änderungen bleiben. Haben sich beide Seiten geändert, bleibt dein Wert und die App meldet den Konflikt.</p>
+    <h3>Tastatur</h3>
+    <ul>
+      <li><kbd>Alt+1</kbd> … <kbd>Alt+9</kbd>: Zug wechseln, <kbd>Alt+0</kbd>: Menü der Züge</li>
+      <li><kbd>Ctrl+Z</kbd>: letzte Bewertung rückgängig</li>
+      <li><kbd>/</kbd>: Suchen</li>
+    </ul>
+  </template>
+
+  <script src="vendor/sql.js/sql-asm.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="lang/de.js"></script>
+  <script src="lang/en.js"></script>
+  <script src="js/version.js"></script>
+  <script src="js/csv.js"></script>
+  <script src="js/wsjf.js"></script>
+  <script src="js/palette.js"></script>
+  <script src="js/wiki.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/session.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

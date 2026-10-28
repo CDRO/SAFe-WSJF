@@ -1,0 +1,14 @@
+SAFe WSJF – Hinweise zu Fremdbestandteilen
+
+SAFe WSJF steht unter der MIT-Lizenz (Datei LICENSE). Es enthält die folgenden Bestandteile von Dritten mit eigener Lizenz:
+
+sql.js 1.14.2 (SQLite 3.49.1), Ordner vendor/sql.js/
+  SQLite, nach JavaScript übersetzt (Datei sql-asm.js, ohne WebAssembly).
+  Lizenz: MIT, Copyright (c) 2017 sql.js authors. Der Lizenztext liegt in vendor/sql.js/LICENSE.
+  Quelle: https://github.com/sql-js/sql.js
+  SQLite selbst ist gemeinfrei: https://sqlite.org/copyright.html
+
+Teile der Persistenz (js/storage.js, js/session.js), die Sprachunterstützung (js/i18n.js) und die Startskripte sind aus
+NoNotes (CDRO/NoNotes) übernommen und mit Zustimmung des Rechteinhabers hier unter MIT gestellt.
+
+Nur für die Entwicklung (nicht im ausgelieferten Paket): Playwright (Apache-2.0) für den Test im Browser.

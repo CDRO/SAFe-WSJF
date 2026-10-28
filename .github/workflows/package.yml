@@ -1,0 +1,118 @@
+name: Testen und paketieren
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release-Version, z. B. v0.1.0. Leer = Version aus package.json. Legt Tag und Release auf dem gewählten Stand an.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Test und ZIP
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code holen
+        uses: actions/checkout@v5
+
+      - name: Node einrichten
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # Version: aus package.json ("version"), Tags v* direkt, beim manuellen Start optional überschrieben.
+      # Ein Release entsteht bei einem Tag, beim manuellen Start, bei einem Push auf main oder wenn die Commit-Nachricht
+      # «[release]» enthält; gibt es den Tag schon, wird nur das Artefakt gebaut (kein zweites Release derselben Version).
+      - name: Version bestimmen
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PKG="v$(node -p "require('./package.json').version")"
+          WANT="false"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+            WANT="true"
+          elif [[ -n "${INPUT_VERSION:-}" ]]; then
+            VERSION="${INPUT_VERSION}"
+            WANT="true"
+          else
+            VERSION="${PKG}"
+            if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then WANT="true"; fi
+            if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_NAME}" == "main" ]]; then WANT="true"; fi
+            if [[ "${GITHUB_EVENT_NAME}" == "push" && "${COMMIT_MESSAGE:-}" == *"[release]"* ]]; then WANT="true"; fi
+          fi
+          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Ungültige Version '${VERSION}', erwartet z. B. v0.1.0" >&2
+            exit 1
+          fi
+          RELEASE="false"
+          if [[ "${WANT}" == "true" ]]; then
+            if [[ "${GITHUB_REF_TYPE}" != "tag" ]] && gh release view "${VERSION}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+              echo "::notice::Release ${VERSION} gibt es schon: nur Artefakt. Für ein neues Release die Version in package.json erhöhen."
+            else
+              RELEASE="true"
+            fi
+          fi
+          if [[ "${RELEASE}" != "true" && "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            VERSION="${VERSION}-dev.$(git rev-parse --short HEAD)"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "release=${RELEASE}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION} (Release: ${RELEASE})"
+
+      - name: Abhängigkeiten installieren
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Testen
+        run: npm test
+
+      - name: Bauen und packen
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          node tools/build.cjs --version "${VERSION}" --out "dist/SAFe-WSJF"
+          (cd dist && zip -r -q "SAFe-WSJF-${VERSION}.zip" SAFe-WSJF)
+
+      - name: Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: SAFe-WSJF-${{ steps.version.outputs.version }}
+          path: dist/SAFe-WSJF-${{ steps.version.outputs.version }}.zip
+
+      - name: Release-Notizen
+        if: steps.version.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          FILE="docs/releases/${VERSION}.md"
+          if [[ -f "${FILE}" ]]; then cp "${FILE}" release-notes.md
+          else printf 'SAFe WSJF %s\n\nZIP herunterladen, entpacken, index.html öffnen.\n' "${VERSION}" > release-notes.md; fi
+
+      - name: Release anlegen
+        if: steps.version.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "${VERSION}" >/dev/null 2>&1; then
+            gh release create "${VERSION}" "dist/SAFe-WSJF-${VERSION}.zip" --target "${GITHUB_SHA}" --title "SAFe WSJF ${VERSION}" --notes-file release-notes.md
+          else
+            gh release upload "${VERSION}" "dist/SAFe-WSJF-${VERSION}.zip" --clobber
+          fi
