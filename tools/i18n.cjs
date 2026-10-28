@@ -29,6 +29,7 @@ function codeKeys() {
   }
   const Core = require(path.join(SRC, 'js', 'wsjf.js'));
   for (const f of Core.FIELDS) keys.add(f.label);
+  for (const c of require(path.join(SRC, 'js', 'palette.js')).COLORS) keys.add(c.name);
   for (const p of plurals) keys.delete(p);
   return { keys, plurals };
 }

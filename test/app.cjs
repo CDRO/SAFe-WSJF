@@ -236,6 +236,45 @@ async function runMain(browser) {
   assert.equal(await page.textContent('#trainName'), 'ART Plattform Süd');
   step('Einstellungen: Skala, Name');
 
+  // Farben: hell oben links, dunkel unten rechts (beide Raster); Präferenzen je Raster, gleiche Farbe erlaubt, bleibt nach Neuladen.
+  const light = sel => page.$eval(sel, e => {
+    const [r, g, b] = getComputedStyle(e).backgroundColor.match(/\d+/g).map(Number);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  });
+  for (const n of [1, 2]) {
+    const tl = await light(`#grid${n} .cell[data-x="1"][data-y="1"]`);
+    const tr = await light(`#grid${n} .cell[data-x="21"][data-y="1"]`);
+    const bl = await light(`#grid${n} .cell[data-x="1"][data-y="21"]`);
+    const br = await light(`#grid${n} .cell[data-x="21"][data-y="21"]`);
+    assert.ok(tl > tr && tl > bl && tr > br && bl > br, `Raster ${n}: ${tl} ${tr} ${bl} ${br}`);
+  }
+  assert.deepEqual(await page.$$eval('.grid', gs => gs.map(g => g.dataset.color)), ['himmelblau', 'koralle']);
+  await page.click('#prefsBtn');
+  await page.waitForSelector('#dialog[open] #colors1');
+  assert.equal(await page.$$eval('#colors1 .swatch', b => b.length), 32);
+  assert.equal(await page.$$eval('#colors2 .swatch', b => b.length), 32);
+  await page.click('#colors2 [data-color="smaragd"]');
+  assert.equal(await page.$eval('#grid2', g => g.dataset.color), 'smaragd', 'Vorschau');
+  await page.click('#dialog button:not(.primary):not(.danger-link):text("Abbrechen")');
+  assert.equal(await page.$eval('#grid2', g => g.dataset.color), 'koralle', 'Abbrechen setzt zurück');
+  await page.click('#prefsBtn');
+  await page.click('#colors1 [data-color="smaragd"]');
+  await page.focus('#colors2 [data-color="koralle"]');
+  await page.keyboard.press('ArrowLeft');
+  await page.click('#colors2 [data-color="smaragd"]');
+  await page.click('#prefsOk');
+  assert.deepEqual(await page.$$eval('.grid', gs => gs.map(g => g.dataset.color)), ['smaragd', 'smaragd']);
+  await page.reload();
+  await page.waitForSelector(READY);
+  assert.deepEqual(await page.$$eval('.grid', gs => gs.map(g => g.dataset.color)), ['smaragd', 'smaragd']);
+  assert.equal(await page.$eval('#grid1 .cell[data-x="1"][data-y="1"]', e => getComputedStyle(e).backgroundColor),
+    await page.$eval('#grid2 .cell[data-x="1"][data-y="1"]', e => getComputedStyle(e).backgroundColor));
+  await page.click('#prefsBtn');
+  await page.click('#prefsReset');
+  await page.click('#prefsOk');
+  assert.deepEqual(await page.$$eval('.grid', gs => gs.map(g => g.dataset.color)), ['himmelblau', 'koralle']);
+  step('Rasterfarben: Verlauf, 32 Farben je Raster, gleiche Farbe, Vorschau, Neuladen, Vorgabe');
+
   // Zweiter Zug mit eigener Zuordnung; Wechsel über Alt+1 und die Adresse; Stand bleibt nach Neuladen.
   await page.click('#trainBtn');
   await page.locator('#menu button', { hasText: 'Neuer Zug' }).click();

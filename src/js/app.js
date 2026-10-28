@@ -8,6 +8,7 @@
   const Core = global.WsjfCore;
   const Csv = global.WsjfCsv;
   const Session = global.WsjfSession;
+  const Palette = global.WsjfPalette;
   const { download, sameStamp } = global.WsjfStorage;
 
   const $ = sel => document.querySelector(sel);
@@ -325,6 +326,10 @@
 
   function renderGrids() {
     const scale = state.settings.scale;
+    const min = scale[0];
+    const max = scale[scale.length - 1];
+    const norm = v => (max > min ? (Number(v) - min) / (max - min) : 0);
+    applyGridColors();
     const active = state.items.filter(i => i.state === 'open' && i.inCsv);
     for (const n of [1, 2]) {
       const g = GRIDS[n];
@@ -344,18 +349,16 @@
           placed.get(k).push(it);
         } else pool.push(it);
       }
-      scale.forEach((y, yi) => {
+      scale.forEach(y => {
         grid.append(el('div', { class: 'head head-y', text: fmtValue(y) }));
-        scale.forEach((x, xi) => {
-          const nx = scale.length > 1 ? xi / (scale.length - 1) : 0;
-          const ny = scale.length > 1 ? yi / (scale.length - 1) : 0;
-          // Raster 1: mehr Nutzen ist besser (unten rechts). Raster 2: dringlicher und kürzer ist besser (oben rechts).
-          const good = n === 1 ? (nx + ny) / 2 : (nx + (1 - ny)) / 2;
+        scale.forEach(x => {
           const cell = el('div', {
             class: 'cell', dataset: { grid: String(n), x: String(x), y: String(y) },
             title: `${t(Core.FIELDS.find(f => f.id === g.x).label)}: ${fmtValue(x)} · ${t(Core.FIELDS.find(f => f.id === g.y).label)}: ${fmtValue(y)}`,
           });
-          cell.style.setProperty('--good', good.toFixed(3));
+          // Wie in der WSJF-App: hell oben links, dunkel unten rechts, nach dem Wert (nicht der Stelle) der Zeile und Spalte.
+          cell.style.setProperty('--nx', norm(x).toFixed(3));
+          cell.style.setProperty('--ny', norm(y).toFixed(3));
           for (const it of (placed.get(`${x}|${y}`) || []).sort((a, b) => Core.naturalCompare(a.key, b.key))) cell.append(card(it, 'cell'));
           grid.append(cell);
         });
@@ -884,6 +887,87 @@
     }, { wide: true });
   }
 
+  // ---------- Präferenzen (je Browser, für alle Züge) ----------
+
+  const PREFS_KEY = 'safe-wsjf.prefs';
+
+  function loadPrefs() {
+    let p = null;
+    try { p = JSON.parse(localStorage.getItem(PREFS_KEY) || 'null'); } catch (e) { p = null; }
+    const colors = Object.assign({}, Palette.DEFAULTS);
+    if (p && p.gridColors) for (const n of [1, 2]) if (Palette.byId(p.gridColors[n])) colors[n] = p.gridColors[n];
+    return { gridColors: colors };
+  }
+
+  function savePrefs(prefs) {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* nur für diese Sitzung */ }
+  }
+
+  /** Farbe je Raster auf die Seite legen (CSS-Variablen --hue und --sat). */
+  function applyGridColors(colors) {
+    const c = colors || loadPrefs().gridColors;
+    for (const n of [1, 2]) {
+      const col = Palette.byId(c[n]);
+      const grid = $('#grid' + n);
+      grid.style.setProperty('--hue', col.h);
+      grid.style.setProperty('--sat', col.s + '%');
+      grid.dataset.color = col.id;
+    }
+  }
+
+  function openPreferences() {
+    const prefs = loadPrefs();
+    const chosen = Object.assign({}, prefs.gridColors);
+    openDialog((dlg, close) => {
+      const pickers = [1, 2].map(n => {
+        const group = el('div', { class: 'swatches', role: 'radiogroup', id: 'colors' + n, 'aria-labelledby': 'colorsLabel' + n });
+        const draw = () => {
+          for (const b of group.children) {
+            const on = b.dataset.color === chosen[n];
+            b.setAttribute('aria-checked', String(on));
+            b.tabIndex = on ? 0 : -1;
+          }
+          applyGridColors(chosen);
+        };
+        for (const c of Palette.COLORS) {
+          const b = el('button', { type: 'button', role: 'radio', class: 'swatch', title: t(c.name), 'aria-label': t(c.name), dataset: { color: c.id } });
+          b.style.setProperty('--hue', c.h);
+          b.style.setProperty('--sat', c.s + '%');
+          b.addEventListener('click', () => { chosen[n] = c.id; draw(); });
+          group.append(b);
+        }
+        group.addEventListener('keydown', e => {
+          const dir = { ArrowRight: 1, ArrowDown: 8, ArrowLeft: -1, ArrowUp: -8 }[e.key];
+          if (!dir) return;
+          e.preventDefault();
+          const i = Palette.COLORS.findIndex(c => c.id === chosen[n]);
+          const next = Palette.COLORS[(i + dir + Palette.COLORS.length) % Palette.COLORS.length];
+          chosen[n] = next.id;
+          draw();
+          group.querySelector(`[data-color="${next.id}"]`).focus();
+        });
+        group.addEventListener('redraw', draw);
+        draw();
+        const title = n === 1 ? t('Raster oben: Direkter Nutzen × Zukünftiger Nutzen') : t('Raster unten: Dringlichkeit × Dauer');
+        return el('fieldset', { class: 'color-field' }, el('legend', { id: 'colorsLabel' + n, text: title }), group);
+      });
+      const finish = ok => {
+        if (ok) savePrefs(Object.assign(prefs, { gridColors: chosen }));
+        applyGridColors();
+        close(ok || null);
+      };
+      dlg.append(
+        el('h2', { text: t('Präferenzen') }),
+        el('p', { class: 'hint', text: t('Farbe der Raster, für alle Züge in diesem Browser. Hell oben links, dunkel unten rechts: dort liegen die wichtigeren Werte. Beide Raster dürfen dieselbe Farbe haben.') }),
+        ...pickers,
+        el('div', { class: 'dialog-buttons' },
+          el('button', { type: 'button', class: 'danger-link', id: 'prefsReset', onclick: () => { Object.assign(chosen, Palette.DEFAULTS); dlg.querySelectorAll('.swatches').forEach(g => g.dispatchEvent(new Event('redraw'))); } }, t('Vorgabe wiederherstellen')),
+          el('button', { type: 'button', class: 'primary', id: 'prefsOk', onclick: () => finish(true) }, t('Speichern')),
+          el('button', { type: 'button', onclick: () => finish(false) }, t('Abbrechen'))));
+      dlg.addEventListener('close', () => applyGridColors(), { once: true });
+    }, { wide: true });
+  }
+
   function openHelp() {
     openDialog((dlg, close) => {
       const content = $('#helpTemplate').content.cloneNode(true);
@@ -901,6 +985,7 @@
     $('#csvMenuBtn').addEventListener('click', () => { if (db()) csvMenu(); });
     $('#dbMenuBtn').addEventListener('click', () => { if (db()) dbMenu(); });
     $('#settingsBtn').addEventListener('click', () => { if (db()) openSettings(); });
+    $('#prefsBtn').addEventListener('click', openPreferences);
     $('#helpBtn').addEventListener('click', openHelp);
     $('#emptyImportBtn').addEventListener('click', () => importCsv(false).catch(fail));
     $('#writeCsvBtn').addEventListener('click', () => writeCsv().catch(fail));

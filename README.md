@@ -104,12 +104,19 @@ Zug entfernen (die Dateien auf der Platte bleiben).
 - **Labels zum Ausblenden**, Vorgabe `informell`; über der Liste gibt es je Label einen Schalter.
 - **Jira-Adresse** für Links auf die Tickets (optional).
 
+### Präferenzen
+
+`Präferenzen` in der Kopfleiste: Farbe je Raster aus 32 Farben, für alle Züge in diesem Browser. Beide Raster dürfen
+dieselbe Farbe haben. Die Zellen gehen wie in der WSJF-App von hell oben links nach dunkel unten rechts, dort liegen die
+wichtigeren Werte. Vorgabe: oben blau, unten rot.
+
 ## Technik
 
 | Teil | Umsetzung |
 | --- | --- |
 | Oberfläche | `index.html`, `css/app.css`, `js/app.js`: reines HTML/CSS/JS, keine Frameworks, nichts gebündelt |
 | CSV | `js/csv.js`: RFC 4180, Trennzeichen erkennen, Zeichensätze, Originaltext je Zeile für den verlustfreien Rundweg |
+| Farben | `js/palette.js`: 32 Farben (Farbton, Sättigung); Helligkeit der Zelle aus ihren Werten in `css/app.css` |
 | Fachlogik | `js/wsjf.js`: Spaltenzuordnung, WSJF, Rangfolge, Dreiwegevergleich, Zeilen zum Zurückschreiben |
 | Datenbank | [sql.js](https://github.com/sql-js/sql.js) (SQLite als JavaScript, ohne WebAssembly) in `vendor/sql.js/`; Schema in `js/db.js` |
 | Persistenz | `js/storage.js` (IndexedDB, File System Access API), `js/session.js` (Züge, Speichern, Änderungen von aussen) |
@@ -165,7 +172,16 @@ npm test
 ## Release
 
 Der Workflow `.github/workflows/package.yml` läuft bei jedem Push: Test, dann `SAFe-WSJF-<Version>.zip` als Artefakt.
-Ein Tag `v*` (oder *Actions → Testen und paketieren → Run workflow* mit Version) legt ein Release mit dem ZIP an.
+Die Version steht in `package.json` (`"version"`). Ein Release mit Tag `v<Version>` und dem ZIP legt der Workflow an,
+wenn
+
+- die Commit-Nachricht `[release]` enthält (auf jedem Zweig),
+- auf `main` gepusht wird,
+- er manuell gestartet wird (*Actions → Testen und paketieren → Run workflow*, Version leer = aus `package.json`), oder
+- ein Tag `v*` gepusht wird.
+
+Gibt es das Release zu dieser Version schon, baut er nur das Artefakt (`v<Version>-dev.<Commit>`). Für ein neues Release
+also die Version in `package.json` erhöhen. Liegt `docs/releases/v<Version>.md` vor, wird sie zum Text des Releases.
 
 ## Lizenz
 
