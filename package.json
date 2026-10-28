@@ -1,6 +1,6 @@
 {
   "name": "safe-wsjf",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "WSJF-Priorisierung nach SAFe: läuft als Datei im Browser, speichert in SQLite (sql.js), liest und schreibt Jira-CSV-Exporte. Kein Server, keine Installation.",
   "license": "MIT",
