@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..');
 const Csv = require(path.join(ROOT, 'src/js/csv.js'));
 const Core = require(path.join(ROOT, 'src/js/wsjf.js'));
 const { WsjfDatabase } = require(path.join(ROOT, 'src/js/db.js'));
+const Wiki = require(path.join(ROOT, 'src/js/wiki.js'));
 const initSqlJs = require(path.join(ROOT, 'src/vendor/sql.js/sql-asm.js'));
 const FIXTURE = fs.readFileSync(path.join(__dirname, 'fixtures/jira-export.csv'));
 
@@ -200,8 +201,47 @@ async function testDb() {
   assert.equal(upgraded.item('X-1').state, 'open');
 }
 
+function testWiki() {
+  const r = (s, ctx) => Wiki.render(s, ctx);
+  // Beispiel aus einem echten Export: verschachtelte Liste, nachsichtiger Link, Erwähnung (Data Center).
+  assert.equal(r('Dies ist ein Test\n* Bullet 1\n** Bullet 2\n[Link][https://www.google.com/]\n* KeyUser:\n** [~U0398261]'),
+    '<p>Dies ist ein Test</p><ul><li>Bullet 1<ul><li>Bullet 2</li></ul></li></ul>'
+    + '<p><a href="https://www.google.com/" target="_blank" rel="noopener noreferrer">Link</a></p>'
+    + '<ul><li>KeyUser:<ul><li><span class="wiki-mention">@U0398261</span></li></ul></li></ul>');
+  assert.equal(r('[~accountid:5b10ac8d82e05b22cc7d4ef5]'), '<p><span class="wiki-mention">@Benutzer</span></p>');
+  // Überschriften und Auszeichnungen; Bindestriche und Unterstriche in Wörtern bleiben Text.
+  assert.equal(r('h2. Ziel *fett* _kursiv_ -weg- +unter+ ^hoch^ ~tief~ ??Quelle?? {{a*b*}} Self-Service foo_bar_baz 3 - 2 - 1'),
+    '<h2>Ziel <strong>fett</strong> <em>kursiv</em> <del>weg</del> <ins>unter</ins> <sup>hoch</sup> <sub>tief</sub> <cite>Quelle</cite> <code>a*b*</code> Self-Service foo_bar_baz 3 - 2 - 1</h2>');
+  assert.equal(r('*fett mit _kursiv_ darin*'), '<p><strong>fett mit <em>kursiv</em> darin</strong></p>');
+  // Nummeriert, gemischt verschachtelt, «-» als Aufzählung, Wechsel der Art.
+  assert.equal(r('# eins\n# zwei\n#* sub\n- strich\n* stern'),
+    '<ol><li>eins</li><li>zwei<ul><li>sub</li></ul></li></ol><ul><li>strich</li><li>stern</li></ul>');
+  assert.equal(r('----'), '<hr>');
+  assert.equal(r('bq. Zitat'), '<blockquote><p>Zitat</p></blockquote>');
+  // Tabelle mit Kopf, Link und | in {{…}}.
+  assert.equal(r('||A||B||\n|[x|https://a.b/c]|{{a|b}}|'),
+    '<table class="wiki-table"><tbody><tr><th>A</th><th>B</th></tr><tr><td><a href="https://a.b/c" target="_blank" rel="noopener noreferrer">x</a></td><td><code>a|b</code></td></tr></tbody></table>');
+  // Code wörtlich, auch einzeilig; Panels mit Titel; Vorgangsschlüssel und Adressen als Links.
+  assert.equal(r('{code:java}\nif (a<b) { *x* }\n{code}'), '<pre class="wiki-code"><code>if (a&lt;b) { *x* }</code></pre>');
+  assert.equal(r('{noformat}a_b_{noformat}'), '<pre class="wiki-noformat"><code>a_b_</code></pre>');
+  assert.equal(r('{warning:title=Achtung}\nSiehe ART-12 und https://x.y/z.\n{warning}', { jiraUrl: 'https://jira.example.com/' }),
+    '<div class="wiki-panel wiki-warning"><div class="wiki-panel-title">Achtung</div><p>Siehe '
+    + '<a href="https://jira.example.com/browse/ART-12" target="_blank" rel="noopener noreferrer">ART-12</a> und '
+    + '<a href="https://x.y/z" target="_blank" rel="noopener noreferrer">https://x.y/z</a>.</p></div>');
+  assert.equal(r('ART-12'), '<p>ART-12</p>', 'ohne Jira-Adresse kein Link');
+  assert.equal(r('{quote}\n* a\n{quote}'), '<blockquote><ul><li>a</li></ul></blockquote>');
+  assert.equal(r('{color:#ff0000}rot{color}'), '<p><span style="color:#ff0000">rot</span></p>');
+  assert.equal(r('Zeile\\\\Umbruch \\*kein*'), '<p>Zeile<br>Umbruch *kein*</p>');
+  assert.equal(r('!screen shot.png|thumbnail!'), '<p><span class="wiki-image" title="Bild aus Jira, nicht im CSV-Export enthalten">🖼 screen shot.png</span></p>');
+  // Sicherheit: kein HTML, keine fremden Schemata, keine Styles ausser Farben.
+  const evil = r('<img src=x onerror=alert(1)> [a|javascript:alert(1)] [javascript:alert(1)] {color:red;background:url(x)}x{color} "\'');
+  assert.ok(!/<img|javascript:"|href="javascript|background/.test(evil), evil);
+  assert.ok(evil.includes('&lt;img src=x onerror=alert(1)&gt;') && evil.includes('&quot;&#39;'));
+}
+
 (async () => {
   try {
+    testWiki(); step('Jira-Wiki-Markup: Blöcke, Auszeichnungen, Links, Erwähnungen, Sicherheit');
     testCsv(); step('CSV: Felder, Zeilenenden, Zeichensätze, Rundweg');
     testCore(); step('WSJF, Rangfolge, Spaltenzuordnung, Dreiwegevergleich');
     await testDb(); step('Datenbank: Einlesen, Zurückschreiben, erneut Einlesen, angehängte Spalten, Öffnen');

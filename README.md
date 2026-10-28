@@ -45,6 +45,9 @@ nicht betroffen.
    Ein Klick auf ein Ticket (oder `Enter`) öffnet die vier Werte zum Auswählen. Beim Ziehen erscheinen unten drei
    Felder: **Erforderlich** (steht immer oben, schreibt feste Werte), **Ausblenden** und **Werte löschen**.
    Zurück in die Liste «Offen» ziehen löscht die Werte dieses Rasters. `Ctrl+Z` macht die letzte Bewertung rückgängig.
+   Im Ticket-Dialog steht die Beschreibung aus Jira formatiert (Jira-Wiki-Markup: Überschriften, Auszeichnungen,
+   Listen, Tabellen, `{code}`, `{quote}`, Panels, Farben, Links, Erwähnungen); ein Schalter zeigt den Quelltext.
+   Bilder sind nicht im CSV-Export und erscheinen mit ihrem Dateinamen.
 4. **Priorisierte Liste.** WSJF = (UBV + RROE + TC) / Job Size, absteigend; erforderliche Tickets zuerst, Tickets ohne
    vollständige Bewertung am Ende. Ein Punkt markiert Werte, die noch nicht in der CSV stehen.
 5. **Zurückschreiben** (`In CSV zurückschreiben`). In Edge und Chrome schreibt die App in die eingelesene Datei (der
@@ -116,6 +119,7 @@ wichtigeren Werte. Vorgabe: oben blau, unten rot.
 | --- | --- |
 | Oberfläche | `index.html`, `css/app.css`, `js/app.js`: reines HTML/CSS/JS, keine Frameworks, nichts gebündelt |
 | CSV | `js/csv.js`: RFC 4180, Trennzeichen erkennen, Zeichensätze, Originaltext je Zeile für den verlustfreien Rundweg |
+| Beschreibung | `js/wiki.js`: Jira-Wiki-Markup als HTML, aller Text escaped, nur sichere Links |
 | Farben | `js/palette.js`: 32 Farben (Farbton, Sättigung); Helligkeit der Zelle aus ihren Werten in `css/app.css` |
 | Fachlogik | `js/wsjf.js`: Spaltenzuordnung, WSJF, Rangfolge, Dreiwegevergleich, Zeilen zum Zurückschreiben |
 | Datenbank | [sql.js](https://github.com/sql-js/sql.js) (SQLite als JavaScript, ohne WebAssembly) in `vendor/sql.js/`; Schema in `js/db.js` |
@@ -160,7 +164,7 @@ npm run build        # schreibt dist/SAFe-WSJF
 | Lauf | Prüft |
 | --- | --- |
 | `tools/i18n.cjs check` | alle Texte der Oberfläche haben eine englische Übersetzung, keine überzähligen |
-| `test/core.cjs` (ohne Browser) | CSV (Felder, Zeilenenden, Zeichensätze, Rundweg), WSJF, Rangfolge, Zuordnung, Zusammenführen, Datenbank |
+| `test/core.cjs` (ohne Browser) | Jira-Wiki-Markup, CSV (Felder, Zeilenenden, Zeichensätze, Rundweg), WSJF, Rangfolge, Zuordnung, Zusammenführen, Datenbank |
 | `test/app.cjs` | das Gebaute per `file://` in headless Chromium: Zug anlegen, Einlesen mit Zuordnung, Ziehen, Dialog, Rückgängig, Zurückschreiben, erneut Einlesen, Datenbankdatei, mehrere Züge, Firefox-Weg (Download), Englisch |
 
 ```bash

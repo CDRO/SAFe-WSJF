@@ -151,6 +151,25 @@ async function runMain(browser) {
   assert.match(await page.textContent('#csvStatus'), /1 Änderung zurückschreiben/);
   step('Ziehen ins Raster, Ticket-Dialog, Rückgängig');
 
+  // Beschreibung als Jira-Wiki-Markup: formatiert (offen), umschaltbar auf Quelltext; Skripte werden nicht ausgeführt.
+  await page.evaluate(() => {
+    WsjfSession.db.run('UPDATE items SET description = ? WHERE issue_key = ?',
+      ['h3. Ziel\n* Bullet 1\n** Bullet 2\n[Link][https://www.google.com/]\n* KeyUser:\n** [~U0398261]\n<img src=x onerror="window.__xss=1">', 'ART-103']);
+    WsjfApp.refresh();
+  });
+  await page.click('#rankBody tr[data-key="ART-103"]');
+  await page.waitForSelector('#dialog[open] .item-desc[open] .desc.wiki');
+  assert.equal(await page.textContent('#dialog .wiki h3'), 'Ziel');
+  assert.equal(await page.$$eval('#dialog .wiki ul ul li', l => l.map(x => x.textContent).join('|')), 'Bullet 2|@U0398261');
+  assert.equal(await page.getAttribute('#dialog .wiki a', 'href'), 'https://www.google.com/');
+  assert.equal(await page.$('#dialog .wiki img'), null);
+  await page.click('#dialog [data-mode="raw"]');
+  assert.match(await page.textContent('#dialog .desc-raw'), /^h3\. Ziel\n\* Bullet 1/);
+  await page.click('#dialog [data-mode="wiki"]');
+  await page.click('#dialog button.primary');
+  assert.equal(await page.evaluate(() => window.__xss), undefined);
+  step('Beschreibung: Jira-Wiki-Markup, Quelltext');
+
   // Ablagefelder: erforderlich, ausblenden, Werte löschen; Label-Schalter.
   await page.evaluate(() => WsjfApp.dropOn('ART-110', '.drop-zone[data-zone="required"]'));
   assert.equal((await rankKeys(page)).indexOf('ART-110') < 2, true);

@@ -39,6 +39,7 @@
     search: '',
     undo: [],
     dragKey: null,
+    descRaw: false,
   };
 
   const db = () => Session.db;
@@ -540,7 +541,21 @@
         }
         dlg.append(states);
         if (cur.description) {
-          dlg.append(el('details', { class: 'item-desc' }, el('summary', { text: t('Beschreibung') }), el('div', { class: 'desc', text: cur.description })));
+          // Jira-Wiki-Markup formatiert (WsjfWiki escaped allen Text) oder als Quelltext; die Wahl gilt für die Sitzung.
+          const body = el('div', { class: 'desc' });
+          const show = () => {
+            const raw = state.descRaw;
+            body.className = raw ? 'desc desc-raw' : 'desc wiki';
+            if (raw) body.textContent = cur.description;
+            else body.innerHTML = global.WsjfWiki.render(cur.description, { jiraUrl: state.settings.jiraUrl });
+            for (const b of mode.children) b.setAttribute('aria-checked', String((b.dataset.mode === 'raw') === raw));
+          };
+          const mode = el('div', { class: 'segmented small', role: 'radiogroup', 'aria-label': t('Darstellung der Beschreibung') },
+            el('button', { type: 'button', role: 'radio', dataset: { mode: 'wiki' }, onclick: () => { state.descRaw = false; show(); } }, t('Formatiert')),
+            el('button', { type: 'button', role: 'radio', dataset: { mode: 'raw' }, onclick: () => { state.descRaw = true; show(); } }, t('Quelltext')));
+          dlg.append(el('details', { class: 'item-desc', open: true },
+            el('summary', {}, el('span', { text: t('Beschreibung') }), mode), body));
+          show();
         }
         dlg.append(el('div', { class: 'dialog-buttons' },
           el('button', { type: 'button', class: 'danger-link', onclick: () => { mutate([key], () => db().setValues(key, { ubv: null, rroe: null, tc: null, jobSize: null })); draw(); } }, t('Werte löschen')),
