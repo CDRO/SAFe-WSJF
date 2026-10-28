@@ -359,6 +359,85 @@ async function runNoFsa(browser) {
   step('Ohne File System Access API: Dateifeld und Download');
 }
 
+/** Ziehen mit der Maus (für Ziele, die erst beim Ziehen erscheinen, wie die Leisten neben dem Ticket). */
+async function dragToStrip(page, cardSel, zoneSel) {
+  const card = page.locator(cardSel);
+  await card.scrollIntoViewIfNeeded();
+  const b = await card.boundingBox();
+  await page.mouse.move(b.x + 20, b.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(b.x + 30, b.y + 16, { steps: 3 });
+  await page.waitForSelector('#stripY:not([hidden])');
+  const z = await page.locator(zoneSel).boundingBox();
+  await page.mouse.move(z.x + z.width / 2, z.y + z.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForSelector('#stripY[hidden]', { state: 'attached' });
+}
+
+async function runPresentation(browser) {
+  const { page, errors, ctx } = await newApp(browser, { context: { viewport: { width: 1600, height: 1000 } } });
+  await createTrain(page, 'Workshop');
+  await importFirst(page);
+  const values = k => page.evaluate(key => { const i = WsjfSession.db.item(key); return [i.ubv, i.rroe, i.tc, i.jobSize]; }, k);
+
+  // Lesbarkeit: Spalten breit genug für 50 Zeichen, Raster scrollt seitlich.
+  const colW = await page.$eval('#grid1 .cell', c => c.getBoundingClientRect().width);
+  assert.ok(colW >= 220, 'Spaltenbreite ' + colW);
+  assert.ok(await page.$eval('#grid1', g => g.parentElement.scrollWidth > g.parentElement.clientWidth), 'Raster scrollt seitlich');
+  assert.equal(await page.$eval('#grid1 .card[data-key="ART-101"] .card-summary', e => e.scrollHeight <= e.clientHeight + 1), true, '«Self-Service Portal für Kunden» ganz lesbar');
+
+  // Präsentationsmodus: P, Raster untereinander, Kopf- und Statusleiste weg, Grösse, Esc.
+  await page.keyboard.press('p');
+  assert.equal(await page.evaluate(() => document.body.classList.contains('presenting')), true);
+  assert.equal(await page.isVisible('#presentBar'), true);
+  assert.equal(await page.isVisible('.topbar'), false);
+  assert.equal(await page.isVisible('.statusbar'), false);
+  assert.equal(await page.textContent('#presentTrain'), 'Workshop');
+  const [p1, p2] = await page.$$eval('.pair', ps => ps.map(p => p.getBoundingClientRect()));
+  assert.ok(p2.top >= p1.bottom && Math.abs(p1.left - p2.left) < 1, 'untereinander');
+  assert.equal(await page.textContent('#zoomValue'), '100 %');
+  await page.click('#zoomIn');
+  await page.keyboard.press('+');
+  assert.equal(await page.textContent('#zoomValue'), '120 %');
+  assert.equal(await page.$eval('#pairs', e => e.style.zoom), '1.2');
+  await page.keyboard.press('-');
+  assert.equal(await page.textContent('#zoomValue'), '110 %');
+  step('Präsentationsmodus: untereinander, Grösse, Lesbarkeit');
+
+  // Leisten neben dem gezogenen Ticket: rechts nur die Zeile, darunter nur die Spalte; aktueller Wert gesperrt.
+  await dragToStrip(page, '#grid1 .card[data-key="ART-101"]', '#stripY .strip-zone[data-value="13"]');
+  assert.deepEqual((await values('ART-101')).slice(0, 2), [8, 13]);
+  await dragToStrip(page, '#grid1 .card[data-key="ART-101"]', '#stripX .strip-zone[data-value="2"]');
+  assert.deepEqual((await values('ART-101')).slice(0, 2), [2, 13]);
+  assert.equal(await page.isVisible('#grid1 .cell[data-x="2"][data-y="13"] .card[data-key="ART-101"]'), true);
+  // Aus der Liste wie in der WSJF-App: fehlender Wert wird 1 (vorhandener bleibt).
+  await dragToStrip(page, '#pool2 .card[data-key="ART-105"]', '#stripX .strip-zone[data-value="8"]');
+  assert.deepEqual((await values('ART-105')).slice(2), [8, 1]);
+  await dragToStrip(page, '#pool1 .card[data-key="ART-105"]', '#stripY .strip-zone[data-value="5"]');
+  assert.deepEqual((await values('ART-105')).slice(0, 2), [3, 5]);
+  // Gesperrter aktueller Wert nimmt nichts an.
+  const card = page.locator('#grid2 .card[data-key="ART-105"]');
+  await card.scrollIntoViewIfNeeded();
+  const b = await card.boundingBox();
+  await page.mouse.move(b.x + 20, b.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(b.x + 30, b.y + 16, { steps: 3 });
+  await page.waitForSelector('#stripY:not([hidden])');
+  assert.equal(await page.$eval('#stripY .strip-zone.current', z => z.dataset.value), '1');
+  assert.equal(await page.$eval('#stripX .strip-zone.current', z => z.dataset.value), '8');
+  await page.mouse.up();
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => document.body.classList.contains('presenting')), false);
+  assert.equal(await page.isVisible('.topbar'), true);
+  assert.equal(await page.$eval('#pairs', e => e.style.zoom), '');
+  await page.click('#presentBtn');
+  assert.equal(await page.textContent('#zoomValue'), '110 %', 'Grösse bleibt gemerkt');
+  await page.click('#presentExit');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+  step('Leisten neben dem Ticket: Zeile, Spalte, aus der Liste, gesperrter Wert');
+}
+
 async function runEnglish(browser) {
   const { page, errors, ctx } = await newApp(browser, { context: { locale: 'en-US' } });
   assert.equal(await page.textContent('#welcome h1'), 'SAFe WSJF');
@@ -385,6 +464,7 @@ async function runEnglish(browser) {
     browser = await loadPlaywright().chromium.launch();
     await runMain(browser);
     await runNoFsa(browser);
+    await runPresentation(browser);
     await runEnglish(browser);
     console.log(`\nApp-Test bestanden (${Math.round((Date.now() - started) / 1000)} s).`);
   } catch (e) {

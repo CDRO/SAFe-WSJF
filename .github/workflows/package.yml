@@ -14,12 +14,48 @@ on:
 
 permissions:
   contents: write
+  actions: write   # Läufe auf anderen Zweigen abbrechen
+
+# Pro Zweig nur ein Lauf: ein neuer Push bricht den älteren Lauf desselben Zweigs ab (main nie, damit jedes Release fertig wird).
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
     name: Test und ZIP
     runs-on: ubuntu-latest
     steps:
+      # main hat Vorrang: Ein Lauf auf main bricht alle laufenden und wartenden Läufe dieses Workflows auf anderen Zweigen
+      # ab. Ein Lauf auf einem anderen Zweig bricht sich selbst ab, wenn auf main gerade einer läuft.
+      - name: Vorrang für main
+        if: github.ref_type == 'branch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          WF="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq '.workflow_id')"
+          active() { # Läufe dieses Workflows, die noch nicht fertig sind (ohne diesen)
+            for st in queued in_progress waiting pending requested; do
+              gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${WF}/runs?status=${st}&per_page=100" \
+                --jq ".workflow_runs[] | select(.id != ${GITHUB_RUN_ID}) | \"\(.id) \(.head_branch)\""
+            done
+          }
+          if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            active | while read -r id branch; do
+              if [[ -n "${id}" && "${branch}" != "main" ]]; then
+                echo "Breche Lauf ${id} auf ${branch} ab (main hat Vorrang)."
+                gh run cancel "${id}" --repo "${GITHUB_REPOSITORY}" || true
+              fi
+            done
+          elif active | awk '$2 == "main"' | grep -q .; then
+            echo "Auf main läuft gerade ein Lauf: dieser Lauf auf ${GITHUB_REF_NAME} bricht ab."
+            gh run cancel "${GITHUB_RUN_ID}" --repo "${GITHUB_REPOSITORY}"
+            for _ in $(seq 1 60); do sleep 5; done   # der Abbruch beendet den Lauf hier
+            echo "Abbruch hat nicht gegriffen." >&2
+            exit 1
+          fi
+
       - name: Code holen
         uses: actions/checkout@v5
 

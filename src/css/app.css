@@ -140,9 +140,11 @@ h2 { font-size: 15px; margin: 0 0 8px; }
 .grid-title { display: flex; justify-content: space-between; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
 .grid {
   display: grid;
-  grid-template-columns: 40px repeat(var(--cols), minmax(70px, 1fr));
+  grid-template-columns: 40px repeat(var(--cols), minmax(var(--col-min, 220px), 1fr));
   gap: 3px;
 }
+.grid-scroll { overflow-x: auto; padding-bottom: 4px; }
+.grid .head-y { position: sticky; left: 0; z-index: 2; background: var(--panel); }
 .grid .head { display: flex; align-items: center; justify-content: center; color: var(--muted); font-weight: 600; font-size: 12px; }
 .grid .head-x { height: 22px; }
 .cell {
@@ -173,7 +175,8 @@ h2 { font-size: 15px; margin: 0 0 8px; }
 .card:hover { border-color: var(--accent); }
 .card-key { font-weight: 600; font-size: 12px; }
 .card-summary { font-size: 12px; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.card-cell .card-summary { -webkit-line-clamp: 1; white-space: nowrap; text-overflow: ellipsis; display: block; }
+/* Mindestens 50 Zeichen der Zusammenfassung lesbar: bis zu drei Zeilen in der Spaltenbreite. */
+.card-summary { -webkit-line-clamp: 3; line-height: 1.3; }
 .card-values, .card-team { font-size: 11px; color: var(--muted); }
 .card.dirty { border-left-color: var(--warn); }
 .card.conflict { border-left-color: var(--danger); }
@@ -201,6 +204,43 @@ body.dragging .drop-zones { display: flex; }
 .zone-required { border-color: var(--required); color: var(--required); }
 .zone-hidden { border-color: var(--muted); }
 .zone-trash { border-color: var(--danger); color: var(--danger); }
+
+/* Leisten neben dem gezogenen Ticket (wie in der WSJF-App) */
+.strip {
+  position: fixed; z-index: 40; display: flex; gap: 6px; padding: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.strip[hidden] { display: none !important; }
+.strip-y { flex-direction: row; align-items: center; }
+.strip-y .strip-label { writing-mode: vertical-rl; transform: rotate(180deg); }
+.strip-x { flex-direction: column; }
+.strip-label { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.strip-zones { display: flex; gap: 4px; }
+.strip-y .strip-zones { flex-direction: column; }
+.strip-zone {
+  min-width: 40px; height: 34px; display: flex; align-items: center; justify-content: center;
+  border: 1px dashed var(--line); border-radius: 5px; font-weight: 600;
+}
+.strip-zone.current { background: var(--bg); color: var(--muted); border-style: solid; opacity: .6; }
+
+/* ---------- Präsentationsmodus ---------- */
+.present-bar { display: none; }
+body.presenting .present-bar {
+  display: flex; align-items: center; gap: 8px; padding: 6px 16px;
+  background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20;
+}
+.present-bar .spacer { flex: 1; }
+.zoom-value { min-width: 4em; text-align: center; font-variant-numeric: tabular-nums; }
+body.presenting .topbar, body.presenting .statusbar, body.presenting .banner { display: none; }
+body.presenting .pairs { grid-template-columns: 1fr; }
+body.presenting .pair { grid-template-columns: minmax(220px, 280px) 1fr; }
+body.presenting .grid { --col-min: 240px; }
+body.presenting .card-key { font-size: 14px; }
+body.presenting .card-summary { font-size: 13px; }
+body.presenting .grid-title { font-size: 16px; }
+body.presenting .grid .head { font-size: 14px; }
+/* Die Liste bleibt erreichbar, steht aber deutlich im Hintergrund. */
+body.presenting .ranking { margin-top: 32px; opacity: .75; font-size: 13px; }
 
 /* ---------- Liste ---------- */
 .ranking { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }

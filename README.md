@@ -42,6 +42,11 @@ nicht betroffen.
    - oben **Direkter Nutzen (UBV) × Zukünftiger Nutzen (RROE)**,
    - unten **Dringlichkeit (TC) × Dauer (Job Size)**.
 
+   Beim Ziehen erscheinen neben dem Ticket zwei Leisten wie in der WSJF-App: rechts die Werte der Zeilen (die Spalte
+   bleibt), darunter die Werte der Spalten (die Zeile bleibt); so lässt sich ein Ticket verschieben, ohne seitlich zu
+   scrollen. Aus der Liste «Offen» wird ein fehlender Wert zu 1. Die Spalten sind breit genug für mindestens 50 Zeichen
+   der Zusammenfassung; das Raster scrollt seitlich, beim Ziehen an den Rand von selbst.
+
    Ein Klick auf ein Ticket (oder `Enter`) öffnet die vier Werte zum Auswählen. Beim Ziehen erscheinen unten drei
    Felder: **Erforderlich** (steht immer oben, schreibt feste Werte), **Ausblenden** und **Werte löschen**.
    Zurück in die Liste «Offen» ziehen löscht die Werte dieses Rasters. `Ctrl+Z` macht die letzte Bewertung rückgängig.
@@ -53,6 +58,13 @@ nicht betroffen.
 5. **Zurückschreiben** (`In CSV zurückschreiben`). In Edge und Chrome schreibt die App in die eingelesene Datei (der
    Browser fragt beim ersten Mal um Erlaubnis); sonst kommt die CSV als Download. Die Datei hat denselben Aufbau wie
    der Export und lässt sich mit dem CSV-Import von Jira wieder einspielen.
+
+### Präsentationsmodus
+
+Für den Workshop am Beamer: `Präsentation` in der Kopfleiste oder Taste `P`. Die App geht ins Vollbild, zeigt beide
+Raster untereinander über die ganze Breite mit grösserer Schrift und blendet Menüs und Statusleiste aus; die priorisierte
+Liste steht unten im Hintergrund. Die Grösse passt sich der Bildschirmbreite an und lässt sich mit `+` / `−`,
+`Ctrl`+Mausrad oder den Knöpfen oben von 75 % bis 200 % einstellen (wird im Browser gemerkt). `Esc` beendet.
 
 ### Was beim Zurückschreiben passiert
 
@@ -165,7 +177,7 @@ npm run build        # schreibt dist/SAFe-WSJF
 | --- | --- |
 | `tools/i18n.cjs check` | alle Texte der Oberfläche haben eine englische Übersetzung, keine überzähligen |
 | `test/core.cjs` (ohne Browser) | Jira-Wiki-Markup, CSV (Felder, Zeilenenden, Zeichensätze, Rundweg), WSJF, Rangfolge, Zuordnung, Zusammenführen, Datenbank |
-| `test/app.cjs` | das Gebaute per `file://` in headless Chromium: Zug anlegen, Einlesen mit Zuordnung, Ziehen, Dialog, Rückgängig, Zurückschreiben, erneut Einlesen, Datenbankdatei, mehrere Züge, Firefox-Weg (Download), Englisch |
+| `test/app.cjs` | das Gebaute per `file://` in headless Chromium: Zug anlegen, Einlesen mit Zuordnung, Ziehen, Leisten neben dem Ticket, Präsentationsmodus, Dialog, Rückgängig, Zurückschreiben, erneut Einlesen, Datenbankdatei, mehrere Züge, Firefox-Weg (Download), Englisch |
 
 ```bash
 npm install
@@ -183,6 +195,10 @@ wenn
 - auf `main` gepusht wird,
 - er manuell gestartet wird (*Actions → Testen und paketieren → Run workflow*, Version leer = aus `package.json`), oder
 - ein Tag `v*` gepusht wird.
+
+Ein Lauf auf `main` hat Vorrang: Er bricht laufende und wartende Läufe auf anderen Zweigen ab, und ein Lauf auf einem
+anderen Zweig bricht sich selbst ab, solange auf `main` einer läuft. Ein neuer Push auf einen Zweig ersetzt dessen
+älteren Lauf.
 
 Gibt es das Release zu dieser Version schon, baut er nur das Artefakt (`v<Version>-dev.<Commit>`). Für ein neues Release
 also die Version in `package.json` erhöhen. Liegt `docs/releases/v<Version>.md` vor, wird sie zum Text des Releases.

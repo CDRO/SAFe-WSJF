@@ -18,11 +18,21 @@
       <button type="button" id="csvMenuBtn" aria-haspopup="menu">CSV</button>
       <button type="button" id="dbMenuBtn" aria-haspopup="menu">Datenbank</button>
       <button type="button" id="settingsBtn">Einstellungen</button>
+      <button type="button" id="presentBtn" title="Präsentationsmodus für den Beamer (P)">Präsentation</button>
       <button type="button" id="prefsBtn">Präferenzen</button>
       <button type="button" id="helpBtn">Hilfe</button>
     </nav>
     <input type="search" id="search" placeholder="Suchen: Schlüssel, Titel, Team, Label" aria-label="Suchen">
   </header>
+
+  <div id="presentBar" class="present-bar">
+    <b id="presentTrain" data-i18n-skip></b>
+    <span class="spacer"></span>
+    <button type="button" id="zoomOut" title="Verkleinern (−)" aria-label="Verkleinern">−</button>
+    <span id="zoomValue" class="zoom-value" data-i18n-skip></span>
+    <button type="button" id="zoomIn" title="Vergrössern (+)" aria-label="Vergrössern">+</button>
+    <button type="button" id="presentExit">Präsentation beenden (Esc)</button>
+  </div>
 
   <div id="banner" class="banner" hidden>
     <span id="bannerText"></span>
@@ -68,7 +78,7 @@
             <span class="axis-x">Direkter Nutzen (UBV) →</span>
             <span class="axis-y">↓ Zukünftiger Nutzen (RROE)</span>
           </div>
-          <div class="grid" id="grid1" data-grid="1"></div>
+          <div class="grid-scroll"><div class="grid" id="grid1" data-grid="1"></div></div>
         </div>
       </section>
 
@@ -82,7 +92,7 @@
             <span class="axis-x">Dringlichkeit (TC) →</span>
             <span class="axis-y">↓ Dauer (Job Size)</span>
           </div>
-          <div class="grid" id="grid2" data-grid="2"></div>
+          <div class="grid-scroll"><div class="grid" id="grid2" data-grid="2"></div></div>
         </div>
       </section>
     </div>
@@ -129,6 +139,8 @@
     <span id="version" class="version" data-i18n-skip></span>
   </footer>
 
+  <div id="stripY" class="strip strip-y" hidden aria-hidden="true"><div class="strip-label" data-i18n-skip></div><div class="strip-zones"></div></div>
+  <div id="stripX" class="strip strip-x" hidden aria-hidden="true"><div class="strip-label" data-i18n-skip></div><div class="strip-zones"></div></div>
   <div id="menu" class="menu" role="menu" hidden></div>
   <dialog id="dialog" class="dialog"></dialog>
   <div id="toasts" class="toasts" aria-live="polite"></div>
@@ -139,7 +151,7 @@
     <ol>
       <li>Je Agile Release Train oder Portfolio einen <b>Zug</b> anlegen (Menü links oben). Jeder Zug hat seine eigene Datenbank.</li>
       <li><b>CSV → CSV einlesen…</b>: den Jira-Export wählen und beim ersten Mal die Spalten zuordnen.</li>
-      <li>Tickets in die zwei Raster ziehen: oben <b>Direkter Nutzen × Zukünftiger Nutzen</b>, unten <b>Dringlichkeit × Dauer</b>. Ein Klick auf ein Ticket öffnet die Werte zum Auswählen (auch mit der Tastatur).</li>
+      <li>Tickets in die zwei Raster ziehen: oben <b>Direkter Nutzen × Zukünftiger Nutzen</b>, unten <b>Dringlichkeit × Dauer</b>. Ein Klick auf ein Ticket öffnet die Werte zum Auswählen (auch mit der Tastatur). Beim Ziehen erscheinen neben dem Ticket zwei Leisten: rechts ändert nur die Zeile, darunter nur die Spalte.</li>
       <li>Die <b>priorisierte Liste</b> ordnet nach WSJF = (UBV + RROE + TC) / Job Size. Erforderliche Tickets stehen immer oben.</li>
       <li><b>In CSV zurückschreiben</b>: die Werte gehen in die eingelesene Datei (Edge, Chrome) oder als Download mit gleichem Aufbau (Firefox). Die Datei lässt sich danach in Jira wieder importieren.</li>
     </ol>
@@ -155,6 +167,7 @@
       <li><kbd>Alt+1</kbd> … <kbd>Alt+9</kbd>: Zug wechseln, <kbd>Alt+0</kbd>: Menü der Züge</li>
       <li><kbd>Ctrl+Z</kbd>: letzte Bewertung rückgängig</li>
       <li><kbd>/</kbd>: Suchen</li>
+      <li><kbd>P</kbd>: Präsentationsmodus ein und aus, <kbd>+</kbd> / <kbd>−</kbd> oder <kbd>Ctrl</kbd>+Mausrad: Grösse, <kbd>Esc</kbd>: beenden</li>
     </ul>
   </template>
 

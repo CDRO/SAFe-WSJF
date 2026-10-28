@@ -40,6 +40,7 @@
     undo: [],
     dragKey: null,
     descRaw: false,
+    presenting: false,
   };
 
   const db = () => Session.db;
@@ -306,6 +307,7 @@
     const info = Session.info();
     $('#trainName').textContent = info.trainName || t('Kein Zug');
     if (!d) {
+      if (state.presenting) setPresenting(false);
       $('#welcome').hidden = false;
       $('#board').hidden = true;
       $('#banner').hidden = true;
@@ -323,6 +325,7 @@
     renderGrids();
     renderRanking();
     renderStatus();
+    $('#presentTrain').textContent = info.trainName;
   }
 
   function renderGrids() {
@@ -568,23 +571,27 @@
   // ---------- Ziehen und Ablegen ----------
 
   function setupDnd() {
-    const board = $('#board');
-    board.addEventListener('dragstart', e => {
-      const c = e.target.closest('.card');
+    // Auf document, damit auch die Leisten neben dem gezogenen Ticket (ausserhalb von #board) Ziele sind.
+    document.addEventListener('dragstart', e => {
+      const c = e.target.closest && e.target.closest('#board .card');
       if (!c) return;
       state.dragKey = c.dataset.key;
       e.dataTransfer.setData('text/plain', c.dataset.key);
       e.dataTransfer.effectAllowed = 'move';
       document.body.classList.add('dragging');
       c.classList.add('drag-source');
+      showStrips(c);
     });
-    board.addEventListener('dragend', e => {
+    document.addEventListener('dragend', () => {
       state.dragKey = null;
       document.body.classList.remove('dragging');
+      hideStrips();
       document.querySelectorAll('.drag-source, .drop-over').forEach(x => x.classList.remove('drag-source', 'drop-over'));
     });
-    const target = e => e.target.closest('.cell, .pool, .drop-zone');
-    board.addEventListener('dragover', e => {
+    const target = e => (e.target.closest ? e.target.closest('.cell, .pool, .drop-zone, .strip-zone:not(.current)') : null);
+    document.addEventListener('dragover', e => {
+      if (!state.dragKey) return;
+      edgeScroll(e);
       const tg = target(e);
       if (!tg) return;
       e.preventDefault();
@@ -592,23 +599,143 @@
       document.querySelectorAll('.drop-over').forEach(x => { if (x !== tg) x.classList.remove('drop-over'); });
       tg.classList.add('drop-over');
     });
-    board.addEventListener('dragleave', e => {
+    document.addEventListener('dragleave', e => {
       const tg = target(e);
       if (tg && !tg.contains(e.relatedTarget)) tg.classList.remove('drop-over');
     });
-    board.addEventListener('drop', e => {
+    document.addEventListener('drop', e => {
       const tg = target(e);
       if (!tg) return;
       e.preventDefault();
       const key = e.dataTransfer.getData('text/plain') || state.dragKey;
       document.body.classList.remove('dragging');
+      hideStrips();
       if (!key || !state.items.some(i => i.key === key)) return;
       dropOn(key, tg);
     });
   }
 
+  /** Leisten neben dem gezogenen Ticket (wie in der WSJF-App): rechts die Werte der Zeilen (Spalte bleibt), darunter die
+   *  Werte der Spalten (Zeile bleibt). Ohne Platz im Raster gilt der vorhandene Wert, sonst der kleinste der Skala. */
+  function showStrips(card) {
+    const cell = card.closest('.cell');
+    const pool = card.closest('.pool');
+    const n = cell ? cell.dataset.grid : pool ? pool.dataset.pool : null;
+    if (!n) return;
+    const g = GRIDS[n];
+    const scale = state.settings.scale;
+    const it = state.items.find(i => i.key === card.dataset.key);
+    const pick = f => (it && it[f] != null && scale.includes(Number(it[f])) ? Number(it[f]) : scale[0]);
+    const cur = cell ? { x: Number(cell.dataset.x), y: Number(cell.dataset.y) } : { x: pick(g.x), y: pick(g.y) };
+    const label = f => t(Core.FIELDS.find(x => x.id === f).label);
+    for (const axis of ['y', 'x']) {
+      const strip = $(axis === 'y' ? '#stripY' : '#stripX');
+      strip.querySelector('.strip-label').textContent = label(g[axis]);
+      const zones = strip.querySelector('.strip-zones');
+      zones.innerHTML = '';
+      for (const v of scale) {
+        const isCur = !!cell && v === cur[axis];
+        zones.append(el('div', {
+          class: 'strip-zone' + (isCur ? ' current' : ''),
+          dataset: { grid: n, axis, value: String(v), x: String(axis === 'x' ? v : cur.x), y: String(axis === 'y' ? v : cur.y) },
+          title: `${label(g.x)}: ${fmtValue(axis === 'x' ? v : cur.x)} · ${label(g.y)}: ${fmtValue(axis === 'y' ? v : cur.y)}`,
+        }, fmtValue(v)));
+      }
+      strip.hidden = false;
+    }
+    placeStrips(card.getBoundingClientRect());
+  }
+
+  function placeStrips(r) {
+    const sy = $('#stripY');
+    const sx = $('#stripX');
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const gap = 6;
+    let left = r.right + gap;
+    if (left + sy.offsetWidth > W - 4) left = Math.max(4, r.left - sy.offsetWidth - gap);
+    sy.style.left = left + 'px';
+    sy.style.top = Math.max(4, Math.min(r.top, H - sy.offsetHeight - 4)) + 'px';
+    let top = r.bottom + gap;
+    if (top + sx.offsetHeight > H - 4) top = Math.max(4, r.top - sx.offsetHeight - gap);
+    let sxLeft = Math.max(4, Math.min(r.left, W - sx.offsetWidth - 4));
+    // Nicht über die andere Leiste legen: daneben ausweichen, sonst unter sie.
+    const ry = { left, right: left + sy.offsetWidth, top: parseFloat(sy.style.top), bottom: parseFloat(sy.style.top) + sy.offsetHeight };
+    const overlaps = (l, tp) => l < ry.right && l + sx.offsetWidth > ry.left && tp < ry.bottom && tp + sx.offsetHeight > ry.top;
+    if (overlaps(sxLeft, top)) {
+      if (ry.left - gap - sx.offsetWidth >= 4) sxLeft = ry.left - gap - sx.offsetWidth;
+      else if (ry.right + gap + sx.offsetWidth <= W - 4) sxLeft = ry.right + gap;
+      else top = Math.min(ry.bottom + gap, H - sx.offsetHeight - 4);
+    }
+    sx.style.top = top + 'px';
+    sx.style.left = sxLeft + 'px';
+  }
+
+  function hideStrips() {
+    $('#stripY').hidden = true;
+    $('#stripX').hidden = true;
+  }
+
+  /** Beim Ziehen nahe am linken oder rechten Rand eines Rasters seitlich weiterscrollen. */
+  function edgeScroll(e) {
+    const EDGE = 70;
+    for (const sc of document.querySelectorAll('.grid-scroll')) {
+      const r = sc.getBoundingClientRect();
+      if (e.clientY < r.top || e.clientY > r.bottom) continue;
+      if (e.clientX < r.left + EDGE && sc.scrollLeft > 0) sc.scrollLeft -= 24;
+      else if (e.clientX > r.right - EDGE && sc.scrollLeft + sc.clientWidth < sc.scrollWidth) sc.scrollLeft += 24;
+    }
+  }
+
+  // ---------- Präsentationsmodus ----------
+
+  const ZOOM_MIN = 0.75;
+  const ZOOM_MAX = 2;
+
+  function presentZoom() {
+    const z = Number(loadPrefs().presentZoom);
+    return Number.isFinite(z) && z >= ZOOM_MIN && z <= ZOOM_MAX ? z : 1;
+  }
+
+  /** Grösse im Präsentationsmodus: nach der Breite des Bildschirms (1 bis 1.6) mal der eigenen Wahl (75 % bis 200 %). */
+  function applyZoom() {
+    const user = presentZoom();
+    const base = Math.min(1.6, Math.max(1, window.innerWidth / 1600));
+    $('#pairs').style.zoom = state.presenting ? String(Math.round(base * user * 100) / 100) : '';
+    $('#zoomValue').textContent = Math.round(user * 100) + ' %';
+  }
+
+  function setZoom(z) {
+    const prefs = loadPrefs();
+    prefs.presentZoom = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100) / 100;
+    savePrefs(prefs);
+    applyZoom();
+  }
+
+  function setPresenting(on) {
+    if (on === state.presenting || (on && !db())) return;
+    state.presenting = on;
+    document.body.classList.toggle('presenting', on);
+    $('#presentTrain').textContent = Session.info().trainName;
+    if (on) {
+      hideMenu();
+      const root = document.documentElement;
+      if (root.requestFullscreen && !document.fullscreenElement) root.requestFullscreen().catch(() => {});
+    } else if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+    applyZoom();
+  }
+
   function dropOn(key, tg) {
-    if (tg.classList.contains('cell')) {
+    if (tg.classList.contains('strip-zone')) {
+      const g = GRIDS[tg.dataset.grid];
+      const it = state.items.find(i => i.key === key);
+      mutate([key], () => {
+        db().setValues(key, { [g.x]: Number(tg.dataset.x), [g.y]: Number(tg.dataset.y) });
+        if (it && it.state !== 'open') db().setState(key, 'open');
+      });
+    } else if (tg.classList.contains('cell')) {
       const g = GRIDS[tg.dataset.grid];
       const it = state.items.find(i => i.key === key);
       mutate([key], () => {
@@ -911,7 +1038,7 @@
     try { p = JSON.parse(localStorage.getItem(PREFS_KEY) || 'null'); } catch (e) { p = null; }
     const colors = Object.assign({}, Palette.DEFAULTS);
     if (p && p.gridColors) for (const n of [1, 2]) if (Palette.byId(p.gridColors[n])) colors[n] = p.gridColors[n];
-    return { gridColors: colors };
+    return Object.assign({}, p && typeof p === 'object' ? p : {}, { gridColors: colors });
   }
 
   function savePrefs(prefs) {
@@ -1036,9 +1163,27 @@
     });
     setupDnd();
 
+    $('#presentBtn').addEventListener('click', () => setPresenting(true));
+    $('#presentExit').addEventListener('click', () => setPresenting(false));
+    $('#zoomIn').addEventListener('click', () => setZoom(presentZoom() + 0.1));
+    $('#zoomOut').addEventListener('click', () => setZoom(presentZoom() - 0.1));
+    document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && state.presenting) setPresenting(false); });
+    window.addEventListener('resize', applyZoom);
+    document.addEventListener('wheel', e => {
+      if (!state.presenting || !e.ctrlKey) return;
+      e.preventDefault();
+      setZoom(presentZoom() + (e.deltaY < 0 ? 0.1 : -0.1));
+    }, { passive: false });
+
     document.addEventListener('keydown', e => {
       const inField = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement && document.activeElement.tagName);
       if ($('#dialog').open) return;
+      if (!inField && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (e.key === 'p' || e.key === 'P') { e.preventDefault(); setPresenting(!state.presenting); return; }
+        if (state.presenting && e.key === 'Escape' && $('#menu').hidden) { setPresenting(false); return; }
+        if (state.presenting && (e.key === '+' || e.key === '=')) { e.preventDefault(); setZoom(presentZoom() + 0.1); return; }
+        if (state.presenting && e.key === '-') { e.preventDefault(); setZoom(presentZoom() - 0.1); return; }
+      }
       if (e.altKey && !e.ctrlKey && /^[0-9]$/.test(e.key)) {
         e.preventDefault();
         if (e.key === '0') { trainMenu(); return; }
