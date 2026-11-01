@@ -461,7 +461,7 @@ async function runEnglish(browser) {
 /** Seite eines Gastgebers aus der Liste «files» in package.json: nur diese Dateien, in dieser Reihenfolge. */
 function writeEmbedPage() {
   const files = require(path.join(ROOT, 'package.json')).files.filter(f => f.startsWith('src/'));
-  const rel = f => path.relative(path.join(DIST, 'embed-test'), path.join(DIST, f.replace(/^src\//, ''))).split(path.sep).join('/');
+  const rel = f => path.relative(path.join(ROOT, 'dist', 'embed-test'), path.join(DIST, f.replace(/^src\//, ''))).split(path.sep).join('/');
   for (const f of files) assert.ok(fs.existsSync(path.join(DIST, f.replace(/^src\//, ''))), 'im Paket: ' + f);
   const html = `<!DOCTYPE html>
 <html lang="de"><head><meta charset="UTF-8"><title>Gastgeber</title>
@@ -503,8 +503,8 @@ ${files.filter(f => f.endsWith('.js')).map(f => `<script src="${rel(f)}"></scrip
 </script>
 </body></html>
 `;
-  fs.mkdirSync(path.join(DIST, 'embed-test'), { recursive: true });
-  const file = path.join(DIST, 'embed-test', 'index.html');
+  fs.mkdirSync(path.join(ROOT, 'dist', 'embed-test'), { recursive: true });
+  const file = path.join(ROOT, 'dist', 'embed-test', 'index.html');
   fs.writeFileSync(file, html);
   return 'file://' + file;
 }
