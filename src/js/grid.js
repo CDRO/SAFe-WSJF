@@ -5,7 +5,7 @@
      const grid = SafeWsjf.create(container, {
        source: { list, setValues, setState, undo?, subscribe? },
        scale, required, hide, i18n: { t, lang }, prefs: { colors, zoom }, onPrefs, onOpen, renderDescription,
-       labels: { keyLabel, title }, matches, notify, onError, onPresent,
+       labels: { keyLabel, title }, readOnly, matches, notify, onError, onPresent,
      });
      grid.refresh(); grid.present(true); grid.setZoom(1.2); grid.destroy();
 
@@ -99,7 +99,9 @@
       return s.length >= 2 ? [...new Set(s)].sort((a, b) => a - b) : Core.DEFAULT_SCALE.slice();
     };
     const requiredOn = () => opts.required !== false;
-    const requiredValues = () => (opts.required && typeof opts.required === 'object' ? opts.required : undefined);
+    /** Feste Werte für «Erforderlich» nur zur Anzeige (Dialog); geschrieben werden sie nie vom Raster, sondern von der Quelle. */
+    const requiredValues = () => (opts.required && typeof opts.required === 'object' ? opts.required : null);
+    const readOnly = () => opts.readOnly === true;
     const hideOn = () => opts.hide !== false;
     const matches = it => { try { return typeof opts.matches === 'function' ? opts.matches(it) !== false : true; } catch (e) { return true; } };
     const notify = (text, kind) => { if (typeof opts.notify === 'function') opts.notify(text, kind); };
@@ -199,6 +201,8 @@
       q('.sw-present-title').textContent = (opts.labels && opts.labels.title) || '';
       q('.sw-zone-required').hidden = !requiredOn();
       q('.sw-zone-hidden').hidden = !hideOn();
+      root.classList.toggle('sw-readonly', readOnly());
+      q('.sw-show-all').hidden = readOnly();
       renderGrids();
       renderRanking();
       if (S.draw) S.draw();
@@ -266,7 +270,7 @@
     function card(it, where, gridNo) {
       const c = el('div', {
         class: `sw-card sw-card-${where}` + (matches(it) ? '' : ' sw-dim') + (it.dirty ? ' sw-dirty' : '') + (it.conflict ? ' sw-conflict' : ''),
-        draggable: 'true', tabindex: '0', role: 'button', dataset: { key: it.key },
+        draggable: readOnly() ? null : 'true', tabindex: '0', role: 'button', dataset: { key: it.key },
         title: `${it.key}: ${it.summary}` + (it.team ? `\n${t('Team')}: ${it.team}` : '') + (it.status ? `\n${t('Status')}: ${it.status}` : ''),
       },
       el('span', { class: 'sw-card-key', text: it.key }),
@@ -319,7 +323,7 @@
       hl.innerHTML = '';
       for (const it of hidden) {
         hl.append(el('li', { class: matches(it) ? '' : 'sw-dim', dataset: { key: it.key } },
-          el('button', { type: 'button', class: 'sw-btn sw-small', onclick: () => act([it.key], () => src.setState(it.key, 'open')) }, t('Einblenden')),
+          readOnly() ? null : el('button', { type: 'button', class: 'sw-btn sw-small', onclick: () => act([it.key], () => src.setState(it.key, 'open')) }, t('Einblenden')),
           el('span', { class: 'sw-key', text: it.key }), ' ', el('span', { text: it.summary }),
           it.labels.length ? el('span', { class: 'sw-labels', text: it.labels.join(', ') }) : null));
       }
@@ -334,6 +338,7 @@
 
     /** Eine Handlung des Benutzers: Ohne source.undo merkt sich der Baustein den Stand davor selbst (bis 50 Schritte). */
     async function act(keys, fn) {
+      if (readOnly()) return;
       if (typeof src.undo !== 'function') {
         const snaps = keys.map(snapshot).filter(Boolean);
         if (snaps.length) { S.undo.push(snaps); if (S.undo.length > 50) S.undo.shift(); }
@@ -343,6 +348,7 @@
     }
 
     async function undo() {
+      if (readOnly()) return;
       if (typeof src.undo === 'function') {
         try { await src.undo(); } catch (e) { error(e); }
         await refresh();
@@ -412,9 +418,10 @@
         if (meta.length) dialog.append(el('dl', { class: 'sw-item-meta' }, meta.map(([k, v]) => [el('dt', { text: k }), el('dd', { text: String(v) })])));
 
         const values = el('div', { class: 'sw-item-values' });
-        const eff = Core.effectiveValues(cur, req);
+        const fixed = cur.state === 'required' && !!req;
+        const eff = fixed ? Core.effectiveValues(cur, req) : { ubv: cur.ubv, rroe: cur.rroe, tc: cur.tc, jobSize: cur.jobSize };
         for (const f of Core.VALUE_FIELDS) {
-          const sel = el('select', { dataset: { field: f }, disabled: cur.state === 'required' || null });
+          const sel = el('select', { dataset: { field: f }, disabled: fixed || readOnly() || null });
           sel.append(el('option', { value: '', text: '–' }));
           const choices = sc.slice();
           if (cur[f] != null && !choices.includes(cur[f])) choices.push(cur[f]);
@@ -429,13 +436,13 @@
         }
         dialog.append(values);
         dialog.append(el('p', { class: 'sw-item-score' }, t('WSJF'), ': ', el('b', { text: fmtScore(Core.score(eff)) }),
-          cur.state === 'required' ? el('span', { class: 'sw-hint', text: ' ' + t('(Erforderlich: feste Werte aus den Einstellungen)') }) : null));
+          fixed ? el('span', { class: 'sw-hint', text: ' ' + t('(Erforderlich: feste Werte aus den Einstellungen)') }) : null));
 
         const states = el('div', { class: 'sw-segmented', role: 'radiogroup', 'aria-label': t('Zustand') });
         for (const [id, text] of [['open', t('Offen')], ['required', t('Erforderlich')], ['hidden', t('Ausgeblendet')]]) {
           if (id === 'required' && !requiredOn() && cur.state !== id) continue;
           if (id === 'hidden' && !hideOn() && cur.state !== id) continue;
-          states.append(el('button', { type: 'button', role: 'radio', 'aria-checked': String(cur.state === id), class: 'sw-btn' + (cur.state === id ? ' sw-on' : ''), dataset: { state: id },
+          states.append(el('button', { type: 'button', role: 'radio', 'aria-checked': String(cur.state === id), class: 'sw-btn' + (cur.state === id ? ' sw-on' : ''), dataset: { state: id }, disabled: readOnly() || null,
             onclick: () => act([key], () => src.setState(key, id)) }, text));
         }
         dialog.append(states);
@@ -465,7 +472,7 @@
           show();
         }
         dialog.append(el('div', { class: 'sw-dialog-buttons' },
-          el('button', { type: 'button', class: 'sw-btn sw-danger-link', onclick: () => act([key], () => src.setValues(key, clearValues())) }, t('Werte löschen')),
+          readOnly() ? null : el('button', { type: 'button', class: 'sw-btn sw-danger-link', onclick: () => act([key], () => src.setValues(key, clearValues())) }, t('Werte löschen')),
           el('button', { type: 'button', class: 'sw-btn sw-primary sw-close', onclick: () => dialog.close() }, t('Schliessen'))));
       };
       S.draw = draw;
@@ -488,6 +495,7 @@
     on(root, 'dragstart', e => {
       const c = e.target.closest && e.target.closest('.sw-card');
       if (!c) return;
+      if (readOnly()) { e.preventDefault(); return; }
       S.dragKey = c.dataset.key;
       e.dataTransfer.setData('text/plain', c.dataset.key);
       e.dataTransfer.effectAllowed = 'move';

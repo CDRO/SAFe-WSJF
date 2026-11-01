@@ -494,10 +494,11 @@ ${files.filter(f => f.endsWith('.js')).map(f => `<script src="${rel(f)}"></scrip
     window.__events = [];
     const ev = name => (...a) => window.__events.push([name, ...a]);
     window.__src = src;
-    window.__grid = SafeWsjf.create(document.getElementById('host'), Object.assign({
+    window.__opts = Object.assign({
       source: src, scale: [1, 2, 3, 5, 8, 13, 20], required: { ubv: 100, rroe: 100, tc: 100, jobSize: 1 }, hide: true,
       prefs: { colors: { 1: 'smaragd', 2: 'gold' }, zoom: 1 }, onPrefs: ev('prefs'), onPresent: ev('present'), notify: ev('notify'), onError: ev('error'),
-    }, extra || {}));
+    }, extra || {});
+    window.__grid = SafeWsjf.create(document.getElementById('host'), window.__opts);
     return window.__grid.refresh();
   };
 </script>
@@ -652,8 +653,38 @@ async function runEmbed(browser) {
   await page.keyboard.press('Control+z');
   assert.deepEqual(await page.evaluate(() => window.__src.log.pop()), ['undo']);
   assert.deepEqual(errors, []);
-  await ctx.close();
   step('Eingebettet: eigene Übersetzung, eigener Dialog, undo der Quelle, ohne Erforderlich und Ausblenden');
+
+  // «Erforderlich» ohne feste Werte (required: true): das Raster setzt nur den Zustand; fremde Felder stören nicht; nur lesen.
+  await page.evaluate(() => __grid.destroy());
+  await page.evaluate(items => mount(memorySource(items.map(i => Object.assign({ id: 7, wsjf: 1.5, rank: 3, extra: { a: 1 } }, i)), false), { required: true }), EMBED_ITEMS);
+  assert.deepEqual(await rankKeys(page), ['E-4', 'E-5', 'E-1', 'E-2']);
+  await page.evaluate(() => __grid.drop('E-5', document.querySelector('.sw-drop-zone[data-zone="required"]')));
+  assert.deepEqual(await page.evaluate(() => window.__src.log), [['setState', 'E-5', 'required']], 'nur der Zustand, keine Werte');
+  await page.click('.sw-rank-body tr[data-key="E-4"]');
+  await page.waitForSelector('.sw-dialog[open] select[data-field="ubv"]');
+  assert.equal(await page.$eval('.sw-dialog select[data-field="ubv"]', s => s.disabled), false);
+  assert.match(await page.textContent('.sw-dialog .sw-item-score'), /WSJF: –/);
+  await page.click('.sw-dialog .sw-close');
+  await page.evaluate(() => { window.__opts.readOnly = true; return __grid.refresh(); });
+  const before = await page.evaluate(() => window.__src.log.length);
+  assert.equal(await page.$eval('.sw-card[data-key="E-1"]', c => c.hasAttribute('draggable')), false);
+  await page.dragAndDrop('.sw-pool[data-pool="1"] .sw-card[data-key="E-2"]', '.sw-grid[data-grid="1"] .sw-cell[data-x="1"][data-y="1"]');
+  await page.evaluate(() => __grid.drop('E-1', document.querySelector('.sw-drop-zone[data-zone="hidden"]')));
+  await page.click('.sw-rank-body tr[data-key="E-1"]');
+  await page.waitForSelector('.sw-dialog[open]');
+  assert.equal(await page.$eval('.sw-dialog select[data-field="ubv"]', s => s.disabled), true);
+  assert.equal(await page.$$eval('.sw-dialog [data-state]', bs => bs.every(b => b.disabled)), true);
+  assert.equal(await page.$('.sw-dialog .sw-danger-link'), null);
+  await page.click('.sw-dialog .sw-close');
+  assert.equal(await page.$('.sw-hidden-list button'), null);
+  await page.click('#hostBtn');
+  await page.keyboard.press('Control+z');
+  assert.equal(await page.evaluate(() => window.__src.log.length), before, 'nur lesen: nichts geschrieben');
+  assert.equal(await page.isVisible('.sw-pool[data-pool="1"] .sw-card[data-key="E-2"]'), true);
+  assert.deepEqual(errors, []);
+  step('Eingebettet: «Erforderlich» nur als Zustand, fremde Felder, nur lesen');
+  await ctx.close();
 }
 
 (async () => {

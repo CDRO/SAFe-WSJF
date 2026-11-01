@@ -131,6 +131,7 @@
   user-select: none;
 }
 .sw-card:hover { border-color: var(--sw-accent); }
+.sw-readonly .sw-card { cursor: pointer; }
 .sw-card-key { font-weight: 600; font-size: var(--sw-small); }
 /* Mindestens 50 Zeichen der Zusammenfassung lesbar: bis zu drei Zeilen in der Spaltenbreite. */
 .sw-card-summary {

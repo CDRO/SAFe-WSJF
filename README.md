@@ -154,8 +154,9 @@ LICENSE und NOTICE gehören dazu (MIT).
 | --- | --- |
 | `source` | die Quelle (unten), Pflicht |
 | `scale` | Zahlen der Spalten und Zeilen, Vorgabe `[1, 2, 3, 5, 8, 13, 20]` |
-| `required` | `{ ubv, rroe, tc, jobSize }`: feste Werte für «Erforderlich» (Rangfolge oben, Dialog zeigt sie); `false` blendet das Ablagefeld und den Zustand aus |
-| `hide` | `false` blendet das Ablagefeld «Ausblenden» und den Zustand aus (Vorgabe `true`) |
+| `required` | Ablagefeld und Zustand «Erforderlich» (Rangfolge oben). `true`: nur der Zustand; `{ ubv, rroe, tc, jobSize }`: dazu feste Werte, die der Dialog anzeigt; `false` blendet beides aus. Das Raster ruft nur `setState(key, 'required')` auf und schreibt nie Werte: feste Werte setzt, wenn gewünscht, die Quelle (die Jira-App beim Zurückschreiben) |
+| `hide` | `false` blendet das Ablagefeld «Ausblenden» und den Zustand aus (Vorgabe `true`). Einträge mit `state: 'hidden'` stehen immer nur in der Liste «Ausgeblendet», nie in den Rastern oder der Rangfolge |
+| `readOnly` | `true`: nur ansehen – kein Ziehen, keine Ablagefelder, Dialog ohne Ändern, kein Einblenden, kein Ctrl+Z; die Quelle wird nie beschrieben. Raster, Liste und Präsentationsmodus bleiben |
 | `i18n` | `{ t, lang }`: Übersetzen des Gastgebers; Schlüssel sind die deutschen Texte. Gibt `t` einen Text unverändert zurück, gilt das Sprachpaket des Bausteins für `lang`. Ohne `i18n` die Sprache von `WsjfI18n` (Deutsch oder Englisch) |
 | `prefs`, `onPrefs(prefs)` | `{ colors: { 1: 'himmelblau', 2: 'koralle' }, zoom: 1 }` (Farben aus `palette.js`, Grösse 0.75 bis 2); `onPrefs` meldet eine neue Grösse zum Merken |
 | `onOpen(key)` | Klick auf ein Ticket öffnet den Dialog des Gastgebers; ohne: der Dialog des Bausteins (Werte, Zustand, Beschreibung) |
@@ -172,7 +173,7 @@ Die Optionen werden bei jedem `refresh()` neu gelesen: `scale`, `required`, `pre
 
 | Methode | |
 | --- | --- |
-| `list()` | `[{ key, summary, status, type, team, labels, description, ubv, rroe, tc, jobSize, state }]`, `state` ist `'open'`, `'required'` oder `'hidden'`; Werte `null` = leer. Freiwillig: `assignee`, `href` (Link auf dem Schlüssel), `dirty`, `conflict`, `base` (die Markierungen der Jira-App) |
+| `list()` | `[{ key, summary, status, type, team, labels, description, ubv, rroe, tc, jobSize, state }]`, `state` ist `'open'`, `'required'` oder `'hidden'`; Werte `null` = leer. Freiwillig: `assignee`, `href` (Link auf dem Schlüssel), `dirty`, `conflict`, `base` (die Markierungen der Jira-App); weitere Felder übergeht der Baustein |
 | `setValues(key, patch)` | ändert einen Teil der vier Werte, z. B. `{ ubv: 8, rroe: 3 }` oder `{ tc: null }` |
 | `setState(key, state)` | ändert den Zustand |
 | `undo()` | freiwillig: macht den letzten Schritt rückgängig (Ctrl+Z). Ohne merkt sich der Baustein die Schritte selbst und setzt sie über `setValues`/`setState` zurück |
