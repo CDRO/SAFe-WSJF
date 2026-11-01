@@ -103,6 +103,14 @@
     return typeof v === 'string' && v !== '' ? v : null;
   }
 
+  /** Übersetzung eines Texts in einer bestimmten Sprache (unabhängig von der gewählten), oder null (für eingebettete Teile,
+   *  deren Gastgeber einen Text nicht kennt). */
+  function lookup(code, key) {
+    const p = packs.get(code);
+    const v = p && !p.source ? p.messages.get(key) : null;
+    return v === undefined ? null : v;
+  }
+
   /** Alle Übersetzungen eines Texts über alle Sprachpakete (zum Beispiel die Namen der Platzhalter in Vorlagen). */
   function variants(key) {
     const out = [];
@@ -228,5 +236,5 @@
 
   function collect(root) { return walk(root || global.document.body, false); }
 
-  global.WsjfI18n = { SOURCE, PSEUDO, N_, register, extend, available, init, setLanguage, language, locale, t, tn, translateDom, collect, format, variant, variants };
+  global.WsjfI18n = { SOURCE, PSEUDO, N_, register, extend, available, init, setLanguage, language, locale, t, tn, translateDom, collect, format, variant, variants, lookup };
 })(window);

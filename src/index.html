@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SAFe WSJF</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232563eb'/%3E%3Cpath d='M3 12h3V8H3zm4 0h3V5H7zm4 0h2V3h-2z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/grid.css">
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -24,15 +25,6 @@
     </nav>
     <input type="search" id="search" placeholder="Suchen: Schlüssel, Titel, Team, Label" aria-label="Suchen">
   </header>
-
-  <div id="presentBar" class="present-bar">
-    <b id="presentTrain" data-i18n-skip></b>
-    <span class="spacer"></span>
-    <button type="button" id="zoomOut" title="Verkleinern (−)" aria-label="Verkleinern">−</button>
-    <span id="zoomValue" class="zoom-value" data-i18n-skip></span>
-    <button type="button" id="zoomIn" title="Vergrössern (+)" aria-label="Vergrössern">+</button>
-    <button type="button" id="presentExit">Präsentation beenden (Esc)</button>
-  </div>
 
   <div id="banner" class="banner" hidden>
     <span id="bannerText"></span>
@@ -61,74 +53,20 @@
       <button type="button" id="emptyImportBtn" class="primary">CSV einlesen…</button>
     </section>
 
-    <div id="dropZones" class="drop-zones" aria-hidden="true">
-      <div class="drop-zone zone-required" data-zone="required"><b>Erforderlich</b><span>immer oben, feste Werte</span></div>
-      <div class="drop-zone zone-hidden" data-zone="hidden"><b>Ausblenden</b><span>nicht bewerten</span></div>
-      <div class="drop-zone zone-trash" data-zone="clear"><b>Werte löschen</b><span>alle vier Werte leeren</span></div>
-    </div>
+    <!-- Raster, priorisierte Liste und Präsentationsmodus: grid.js (SafeWsjf.create) -->
+    <div id="wsjf" class="wsjf-host"></div>
 
-    <div id="pairs" class="pairs">
-      <section class="pair" data-grid="1">
-        <aside class="pool" data-pool="1">
-          <h2>Offen <span class="count" id="pool1Count"></span></h2>
-          <div class="pool-list" id="pool1"></div>
-        </aside>
-        <div class="grid-wrap">
-          <div class="grid-title">
-            <span class="axis-x">Direkter Nutzen (UBV) →</span>
-            <span class="axis-y">↓ Zukünftiger Nutzen (RROE)</span>
-          </div>
-          <div class="grid-scroll"><div class="grid" id="grid1" data-grid="1"></div></div>
-        </div>
-      </section>
-
-      <section class="pair" data-grid="2">
-        <aside class="pool" data-pool="2">
-          <h2>Offen <span class="count" id="pool2Count"></span></h2>
-          <div class="pool-list" id="pool2"></div>
-        </aside>
-        <div class="grid-wrap">
-          <div class="grid-title">
-            <span class="axis-x">Dringlichkeit (TC) →</span>
-            <span class="axis-y">↓ Dauer (Job Size)</span>
-          </div>
-          <div class="grid-scroll"><div class="grid" id="grid2" data-grid="2"></div></div>
-        </div>
-      </section>
-    </div>
-
-    <section class="ranking">
-      <div class="ranking-head">
-        <h2>Priorisierte Liste <span class="count" id="rankCount"></span></h2>
-        <div class="ranking-actions">
-          <span id="labelToggles"></span>
-          <button type="button" id="writeCsvBtn" class="primary">In CSV zurückschreiben</button>
-        </div>
-      </div>
-      <table class="rank-table">
-        <thead>
-          <tr>
-            <th class="num">#</th><th>Schlüssel</th><th>Zusammenfassung</th><th>Team</th>
-            <th class="num" title="Direkter Nutzen">UBV</th><th class="num" title="Zukünftiger Nutzen">RROE</th>
-            <th class="num" title="Dringlichkeit">TC</th><th class="num" title="Dauer">Job Size</th><th class="num">WSJF</th>
-          </tr>
-        </thead>
-        <tbody id="rankBody"></tbody>
-      </table>
-
-      <details id="hiddenBox" class="side-box">
-        <summary>Ausgeblendet <span class="count" id="hiddenCount"></span></summary>
-        <div class="side-actions"><button type="button" id="showAllBtn">Alle wieder einblenden</button></div>
-        <ul id="hiddenList" class="plain-list"></ul>
+    <!-- Teile der App, die beim Start in die Plätze des Rasters wandern -->
+    <div id="appSlots" hidden>
+      <span id="labelToggles"></span>
+      <button type="button" id="writeCsvBtn" class="primary">In CSV zurückschreiben</button>
+      <details id="goneBox" class="sw-side-box" hidden>
+        <summary>Nicht mehr in der CSV <span class="sw-count" id="goneCount"></span></summary>
+        <p class="sw-hint">Diese Tickets fehlen im zuletzt eingelesenen Export. Sie werden nicht zurückgeschrieben.</p>
+        <div class="sw-side-actions"><button type="button" id="removeGoneBtn">Alle entfernen</button></div>
+        <ul id="goneList" class="sw-plain-list"></ul>
       </details>
-
-      <details id="goneBox" class="side-box" hidden>
-        <summary>Nicht mehr in der CSV <span class="count" id="goneCount"></span></summary>
-        <p class="hint">Diese Tickets fehlen im zuletzt eingelesenen Export. Sie werden nicht zurückgeschrieben.</p>
-        <div class="side-actions"><button type="button" id="removeGoneBtn">Alle entfernen</button></div>
-        <ul id="goneList" class="plain-list"></ul>
-      </details>
-    </section>
+    </div>
   </main>
 
   <footer class="statusbar">
@@ -139,8 +77,6 @@
     <span id="version" class="version" data-i18n-skip></span>
   </footer>
 
-  <div id="stripY" class="strip strip-y" hidden aria-hidden="true"><div class="strip-label" data-i18n-skip></div><div class="strip-zones"></div></div>
-  <div id="stripX" class="strip strip-x" hidden aria-hidden="true"><div class="strip-label" data-i18n-skip></div><div class="strip-zones"></div></div>
   <div id="menu" class="menu" role="menu" hidden></div>
   <dialog id="dialog" class="dialog"></dialog>
   <div id="toasts" class="toasts" aria-live="polite"></div>
@@ -183,6 +119,7 @@
   <script src="js/db.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/session.js"></script>
+  <script src="js/grid.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -51,7 +51,7 @@ async function domKeys() {
       const help = document.createElement('div');
       help.append(document.querySelector('#helpTemplate').content.cloneNode(true));
       const all = I.collect(document.body).concat(I.collect(help));
-      for (const id of ['welcome', 'board', 'emptyState']) { const e = document.getElementById(id); if (e) all.push(...I.collect(e)); }
+      for (const id of ['welcome', 'board', 'emptyState', 'goneBox']) { const e = document.getElementById(id); if (e) all.push(...I.collect(e)); }
       return all;
     }));
   } finally { await browser.close(); }

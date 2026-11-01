@@ -76,7 +76,7 @@ async function newApp(browser, opts) {
 const saved = page => page.waitForFunction(() => document.querySelector('#status').dataset.state === 'saved');
 const csvText = page => page.evaluate(() => new TextDecoder().decode(window.__csv.data));
 const rowOf = (text, key) => text.split('\r\n').find(l => l.includes(',' + key + ','));
-const rankKeys = page => page.$$eval('#rankBody tr', trs => trs.map(t => t.dataset.key));
+const rankKeys = page => page.$$eval('.sw-rank-body tr', trs => trs.map(t => t.dataset.key));
 
 async function menu(page, button, label) {
   await page.click(button);
@@ -93,7 +93,7 @@ async function importFirst(page) {
   await page.click('#emptyImportBtn');
   await page.waitForSelector('#mapOk');
   await page.click('#mapOk');
-  await page.waitForSelector('#rankBody tr');
+  await page.waitForSelector('.sw-rank-body tr');
   await saved(page);
 }
 
@@ -119,34 +119,34 @@ async function runMain(browser) {
   assert.match(await page.textContent('#dialog .error'), /Schlüssel/);
   await page.selectOption('#map-key', { label: 'Issue key' });
   await page.click('#mapOk');
-  await page.waitForSelector('#rankBody tr');
+  await page.waitForSelector('.sw-rank-body tr');
   await saved(page);
   assert.deepEqual(await rankKeys(page), ['ART-104', 'ART-103', 'ART-101', 'ART-110', 'ART-105']);
-  assert.match(await page.textContent('#rankBody tr[data-key="ART-104"]'), /Erforderlich/);
-  assert.equal(await page.textContent('#hiddenCount'), '(1)');
-  assert.equal(await page.isVisible('#grid1 .cell[data-x="8"][data-y="3"] .card[data-key="ART-101"]'), true);
-  assert.equal(await page.isVisible('#pool2 .card[data-key="ART-105"]'), true);
+  assert.match(await page.textContent('.sw-rank-body tr[data-key="ART-104"]'), /Erforderlich/);
+  assert.equal(await page.textContent('.sw-hidden-count'), '(1)');
+  assert.equal(await page.isVisible('.sw-grid[data-grid="1"] .sw-cell[data-x="8"][data-y="3"] .sw-card[data-key="ART-101"]'), true);
+  assert.equal(await page.isVisible('.sw-pool[data-pool="2"] .sw-card[data-key="ART-105"]'), true);
   assert.match(await page.textContent('#csvStatus'), /aktuell/);
   step('Zug anlegen, CSV mit Zuordnung einlesen, Rangfolge');
 
   // Ziehen ins Raster, Dialog, Rückgängig.
-  await page.dragAndDrop('#pool2 .card[data-key="ART-105"]', '#grid2 .cell[data-x="8"][data-y="3"]');
-  await page.waitForSelector('#grid2 .cell[data-x="8"][data-y="3"] .card[data-key="ART-105"]');
-  await page.click('#grid1 .card[data-key="ART-105"]').catch(() => {}); // steht im Raster 1 noch nicht
-  await page.click('#pool1 .card[data-key="ART-105"]');
-  await page.waitForSelector('#dialog[open] #val-rroe');
-  await page.selectOption('#val-rroe', '2');
-  assert.match(await page.textContent('#dialog .item-score'), /4\.33/);
-  assert.match(await page.textContent('#dialog'), /in der CSV: –/);
-  await page.click('#dialog button.primary');
-  assert.equal(await page.textContent('#rankBody tr[data-key="ART-105"] td.score'), '4.33');
+  await page.dragAndDrop('.sw-pool[data-pool="2"] .sw-card[data-key="ART-105"]', '.sw-grid[data-grid="2"] .sw-cell[data-x="8"][data-y="3"]');
+  await page.waitForSelector('.sw-grid[data-grid="2"] .sw-cell[data-x="8"][data-y="3"] .sw-card[data-key="ART-105"]');
+  await page.click('.sw-grid[data-grid="1"] .sw-card[data-key="ART-105"]').catch(() => {}); // steht im Raster 1 noch nicht
+  await page.click('.sw-pool[data-pool="1"] .sw-card[data-key="ART-105"]');
+  await page.waitForSelector('.sw-dialog[open] select[data-field="rroe"]');
+  await page.selectOption('.sw-dialog select[data-field="rroe"]', '2');
+  assert.match(await page.textContent('.sw-dialog .sw-item-score'), /4\.33/);
+  assert.match(await page.textContent('.sw-dialog'), /in der CSV: –/);
+  await page.click('.sw-dialog .sw-close');
+  assert.equal(await page.textContent('.sw-rank-body tr[data-key="ART-105"] td.sw-score'), '4.33');
   assert.deepEqual((await rankKeys(page)).slice(0, 2), ['ART-104', 'ART-105']);
   await page.keyboard.press('Control+z');
-  assert.equal((await page.textContent('#rankBody tr[data-key="ART-105"] td.score')).startsWith('–'), true);
+  assert.equal((await page.textContent('.sw-rank-body tr[data-key="ART-105"] td.sw-score')).startsWith('–'), true);
   await page.keyboard.press('Control+z');
-  assert.equal(await page.isVisible('#pool2 .card[data-key="ART-105"]'), true);
-  await page.dragAndDrop('#pool2 .card[data-key="ART-105"]', '#grid2 .cell[data-x="8"][data-y="3"]');
-  await page.dragAndDrop('#pool1 .card[data-key="ART-105"]', '#grid1 .cell[data-x="3"][data-y="2"]');
+  assert.equal(await page.isVisible('.sw-pool[data-pool="2"] .sw-card[data-key="ART-105"]'), true);
+  await page.dragAndDrop('.sw-pool[data-pool="2"] .sw-card[data-key="ART-105"]', '.sw-grid[data-grid="2"] .sw-cell[data-x="8"][data-y="3"]');
+  await page.dragAndDrop('.sw-pool[data-pool="1"] .sw-card[data-key="ART-105"]', '.sw-grid[data-grid="1"] .sw-cell[data-x="3"][data-y="2"]');
   await saved(page);
   assert.match(await page.textContent('#csvStatus'), /1 Änderung zurückschreiben/);
   step('Ziehen ins Raster, Ticket-Dialog, Rückgängig');
@@ -157,35 +157,35 @@ async function runMain(browser) {
       ['h3. Ziel\n* Bullet 1\n** Bullet 2\n[Link][https://www.google.com/]\n* KeyUser:\n** [~U0398261]\n<img src=x onerror="window.__xss=1">', 'ART-103']);
     WsjfApp.refresh();
   });
-  await page.click('#rankBody tr[data-key="ART-103"]');
-  await page.waitForSelector('#dialog[open] .item-desc[open] .desc.wiki');
-  assert.equal(await page.textContent('#dialog .wiki h3'), 'Ziel');
-  assert.equal(await page.$$eval('#dialog .wiki ul ul li', l => l.map(x => x.textContent).join('|')), 'Bullet 2|@U0398261');
-  assert.equal(await page.getAttribute('#dialog .wiki a', 'href'), 'https://www.google.com/');
-  assert.equal(await page.$('#dialog .wiki img'), null);
-  await page.click('#dialog [data-mode="raw"]');
-  assert.match(await page.textContent('#dialog .desc-raw'), /^h3\. Ziel\n\* Bullet 1/);
-  await page.click('#dialog [data-mode="wiki"]');
-  await page.click('#dialog button.primary');
+  await page.click('.sw-rank-body tr[data-key="ART-103"]');
+  await page.waitForSelector('.sw-dialog[open] .sw-item-desc[open] .sw-desc.sw-wiki');
+  assert.equal(await page.textContent('.sw-dialog .sw-wiki h3'), 'Ziel');
+  assert.equal(await page.$$eval('.sw-dialog .sw-wiki ul ul li', l => l.map(x => x.textContent).join('|')), 'Bullet 2|@U0398261');
+  assert.equal(await page.getAttribute('.sw-dialog .sw-wiki a', 'href'), 'https://www.google.com/');
+  assert.equal(await page.$('.sw-dialog .sw-wiki img'), null);
+  await page.click('.sw-dialog [data-mode="raw"]');
+  assert.match(await page.textContent('.sw-dialog .sw-desc-raw'), /^h3\. Ziel\n\* Bullet 1/);
+  await page.click('.sw-dialog [data-mode="wiki"]');
+  await page.click('.sw-dialog .sw-close');
   assert.equal(await page.evaluate(() => window.__xss), undefined);
   step('Beschreibung: Jira-Wiki-Markup, Quelltext');
 
   // Ablagefelder: erforderlich, ausblenden, Werte löschen; Label-Schalter.
-  await page.evaluate(() => WsjfApp.dropOn('ART-110', '.drop-zone[data-zone="required"]'));
+  await page.evaluate(() => WsjfApp.dropOn('ART-110', '.sw-drop-zone[data-zone="required"]'));
   assert.equal((await rankKeys(page)).indexOf('ART-110') < 2, true);
-  await page.evaluate(() => WsjfApp.dropOn('ART-110', '.drop-zone[data-zone="hidden"]'));
-  assert.equal(await page.textContent('#hiddenCount'), '(2)');
-  await page.click('#hiddenBox summary');
-  await page.click('#hiddenList li[data-key="ART-110"] button');
-  assert.equal(await page.textContent('#hiddenCount'), '(1)');
+  await page.evaluate(() => WsjfApp.dropOn('ART-110', '.sw-drop-zone[data-zone="hidden"]'));
+  assert.equal(await page.textContent('.sw-hidden-count'), '(2)');
+  await page.click('.sw-hidden-box summary');
+  await page.click('.sw-hidden-list li[data-key="ART-110"] button');
+  assert.equal(await page.textContent('.sw-hidden-count'), '(1)');
   await page.click('#labelToggles button');
-  assert.equal(await page.textContent('#hiddenCount'), '(0)');
+  assert.equal(await page.textContent('.sw-hidden-count'), '(0)');
   await page.click('#labelToggles button');
-  assert.equal(await page.textContent('#hiddenCount'), '(1)');
-  await page.evaluate(() => WsjfApp.dropOn('ART-110', '.drop-zone[data-zone="clear"]'));
-  assert.equal(await page.isVisible('#pool1 .card[data-key="ART-110"]'), true);
+  assert.equal(await page.textContent('.sw-hidden-count'), '(1)');
+  await page.evaluate(() => WsjfApp.dropOn('ART-110', '.sw-drop-zone[data-zone="clear"]'));
+  assert.equal(await page.isVisible('.sw-pool[data-pool="1"] .sw-card[data-key="ART-110"]'), true);
   await page.keyboard.press('Control+z');
-  assert.equal(await page.isVisible('#grid1 .card[data-key="ART-110"]'), true);
+  assert.equal(await page.isVisible('.sw-grid[data-grid="1"] .sw-card[data-key="ART-110"]'), true);
   step('Erforderlich, Ausblenden, Label-Schalter, Werte löschen');
 
   // Zurückschreiben in die eingelesene Datei: nur geänderte Zellen, Rest Byte für Byte.
@@ -199,9 +199,9 @@ async function runMain(browser) {
   step('In die CSV zurückschreiben');
 
   // Neuer Export an derselben Stelle: Schreiben fragt; erneut einlesen führt zusammen.
-  await page.click('#rankBody tr[data-key="ART-103"]');
-  await page.selectOption('#val-ubv', '13');
-  await page.click('#dialog button.primary');
+  await page.click('.sw-rank-body tr[data-key="ART-103"]');
+  await page.selectOption('.sw-dialog select[data-field="ubv"]', '13');
+  await page.click('.sw-dialog .sw-close');
   await page.evaluate(() => {
     const t = new TextDecoder().decode(window.__csv.data)
       .replace('Login mit SSO,ART-103,10103,Enabler,Backlog,ART,Ben Beispiel,03/Sep/26 9:00 AM,,,SSO über Entra ID,Team Blau,5,8,13,8,3.25',
@@ -232,7 +232,7 @@ async function runMain(browser) {
   await menu(page, '#dbMenuBtn', 'Datenbankdatei anlegen');
   await page.waitForFunction(() => window.__saved && window.__saved.data.length > 0 && /art-plattform\.sqlite/.test(document.querySelector('#fileStatus').textContent));
   const before = await page.evaluate(() => window.__writes);
-  await page.dragAndDrop('#grid1 .card[data-key="ART-120"]', '#pool1');
+  await page.dragAndDrop('.sw-grid[data-grid="1"] .sw-card[data-key="ART-120"]', '.sw-pool[data-pool="1"]');
   await saved(page);
   assert.ok(await page.evaluate(() => window.__writes) > before);
   // Von aussen geändert (kein eigener Stand offen): die App lädt still nach.
@@ -243,7 +243,7 @@ async function runMain(browser) {
     window.__saved.replace(db.export());
   });
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await page.waitForFunction(() => document.querySelector('#rankBody tr[data-key="ART-101"] td:nth-child(8)').textContent === '13');
+  await page.waitForFunction(() => document.querySelector('.sw-rank-body tr[data-key="ART-101"] td:nth-child(8)').textContent === '13');
   step('Datenbankdatei anlegen, schreiben, Änderung von aussen laden');
 
   // Einstellungen: Skala und Name.
@@ -251,7 +251,7 @@ async function runMain(browser) {
   await page.fill('#setScale', '1, 2, 3, 5, 8, 13, 21');
   await page.fill('#setName', 'ART Plattform Süd');
   await page.click('#dialog button[type=submit]');
-  await page.waitForFunction(() => [...document.querySelectorAll('#grid1 .head-x')].map(h => h.textContent).join(',') === '1,2,3,5,8,13,21');
+  await page.waitForFunction(() => [...document.querySelectorAll('.sw-grid[data-grid="1"] .sw-head-x')].map(h => h.textContent).join(',') === '1,2,3,5,8,13,21');
   assert.equal(await page.textContent('#trainName'), 'ART Plattform Süd');
   step('Einstellungen: Skala, Name');
 
@@ -261,37 +261,37 @@ async function runMain(browser) {
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   });
   for (const n of [1, 2]) {
-    const tl = await light(`#grid${n} .cell[data-x="1"][data-y="1"]`);
-    const tr = await light(`#grid${n} .cell[data-x="21"][data-y="1"]`);
-    const bl = await light(`#grid${n} .cell[data-x="1"][data-y="21"]`);
-    const br = await light(`#grid${n} .cell[data-x="21"][data-y="21"]`);
+    const tl = await light(`.sw-grid[data-grid="${n}"] .sw-cell[data-x="1"][data-y="1"]`);
+    const tr = await light(`.sw-grid[data-grid="${n}"] .sw-cell[data-x="21"][data-y="1"]`);
+    const bl = await light(`.sw-grid[data-grid="${n}"] .sw-cell[data-x="1"][data-y="21"]`);
+    const br = await light(`.sw-grid[data-grid="${n}"] .sw-cell[data-x="21"][data-y="21"]`);
     assert.ok(tl > tr && tl > bl && tr > br && bl > br, `Raster ${n}: ${tl} ${tr} ${bl} ${br}`);
   }
-  assert.deepEqual(await page.$$eval('.grid', gs => gs.map(g => g.dataset.color)), ['himmelblau', 'koralle']);
+  assert.deepEqual(await page.$$eval('.sw-grid', gs => gs.map(g => g.dataset.color)), ['himmelblau', 'koralle']);
   await page.click('#prefsBtn');
   await page.waitForSelector('#dialog[open] #colors1');
   assert.equal(await page.$$eval('#colors1 .swatch', b => b.length), 32);
   assert.equal(await page.$$eval('#colors2 .swatch', b => b.length), 32);
   await page.click('#colors2 [data-color="smaragd"]');
-  assert.equal(await page.$eval('#grid2', g => g.dataset.color), 'smaragd', 'Vorschau');
+  assert.equal(await page.$eval('.sw-grid[data-grid="2"]', g => g.dataset.color), 'smaragd', 'Vorschau');
   await page.click('#dialog button:not(.primary):not(.danger-link):text("Abbrechen")');
-  assert.equal(await page.$eval('#grid2', g => g.dataset.color), 'koralle', 'Abbrechen setzt zurück');
+  assert.equal(await page.$eval('.sw-grid[data-grid="2"]', g => g.dataset.color), 'koralle', 'Abbrechen setzt zurück');
   await page.click('#prefsBtn');
   await page.click('#colors1 [data-color="smaragd"]');
   await page.focus('#colors2 [data-color="koralle"]');
   await page.keyboard.press('ArrowLeft');
   await page.click('#colors2 [data-color="smaragd"]');
   await page.click('#prefsOk');
-  assert.deepEqual(await page.$$eval('.grid', gs => gs.map(g => g.dataset.color)), ['smaragd', 'smaragd']);
+  assert.deepEqual(await page.$$eval('.sw-grid', gs => gs.map(g => g.dataset.color)), ['smaragd', 'smaragd']);
   await page.reload();
   await page.waitForSelector(READY);
-  assert.deepEqual(await page.$$eval('.grid', gs => gs.map(g => g.dataset.color)), ['smaragd', 'smaragd']);
-  assert.equal(await page.$eval('#grid1 .cell[data-x="1"][data-y="1"]', e => getComputedStyle(e).backgroundColor),
-    await page.$eval('#grid2 .cell[data-x="1"][data-y="1"]', e => getComputedStyle(e).backgroundColor));
+  assert.deepEqual(await page.$$eval('.sw-grid', gs => gs.map(g => g.dataset.color)), ['smaragd', 'smaragd']);
+  assert.equal(await page.$eval('.sw-grid[data-grid="1"] .sw-cell[data-x="1"][data-y="1"]', e => getComputedStyle(e).backgroundColor),
+    await page.$eval('.sw-grid[data-grid="2"] .sw-cell[data-x="1"][data-y="1"]', e => getComputedStyle(e).backgroundColor));
   await page.click('#prefsBtn');
   await page.click('#prefsReset');
   await page.click('#prefsOk');
-  assert.deepEqual(await page.$$eval('.grid', gs => gs.map(g => g.dataset.color)), ['himmelblau', 'koralle']);
+  assert.deepEqual(await page.$$eval('.sw-grid', gs => gs.map(g => g.dataset.color)), ['himmelblau', 'koralle']);
   step('Rasterfarben: Verlauf, 32 Farben je Raster, gleiche Farbe, Vorschau, Neuladen, Vorgabe');
 
   // Zweiter Zug mit eigener Zuordnung; Wechsel über Alt+1 und die Adresse; Stand bleibt nach Neuladen.
@@ -310,7 +310,7 @@ async function runMain(browser) {
   await page.selectOption('#map-ubv', { label: 'Nutzen' });
   await page.selectOption('#map-jobSize', { label: 'Neue Spalte «Job Size» anhängen' });
   await page.click('#mapOk');
-  await page.waitForSelector('#rankBody tr[data-key="KL-1"]');
+  await page.waitForSelector('.sw-rank-body tr[data-key="KL-1"]');
   await saved(page);
   await page.keyboard.press('Alt+1');
   await page.waitForFunction(() => document.querySelector('#trainName').textContent === 'ART Plattform Süd');
@@ -318,10 +318,10 @@ async function runMain(browser) {
   await page.reload();
   await page.waitForSelector(READY);
   assert.equal(await page.textContent('#trainName'), 'ART Plattform Süd');
-  assert.equal(await page.isVisible('#rankBody tr[data-key="ART-120"]'), true);
+  assert.equal(await page.isVisible('.sw-rank-body tr[data-key="ART-120"]'), true);
   await page.goto(APP_URL + '#zug=2');
   await page.waitForSelector(READY);
-  await page.waitForSelector('#rankBody tr[data-key="KL-1"]');
+  await page.waitForSelector('.sw-rank-body tr[data-key="KL-1"]');
   assert.equal(await page.textContent('#trainName'), 'Portfolio Klinik');
   step('Mehrere Züge: eigene Zuordnung, Alt+1, Adresse, Neuladen');
 
@@ -343,10 +343,10 @@ async function runNoFsa(browser) {
   await chooser.setFiles({ name: 'jira-export.csv', mimeType: 'text/csv', buffer: FIXTURE });
   await page.waitForSelector('#mapOk');
   await page.click('#mapOk');
-  await page.waitForSelector('#rankBody tr');
+  await page.waitForSelector('.sw-rank-body tr');
   assert.match(await page.textContent('#fileStatus'), /Kopie regelmässig herunterladen/);
-  await page.dragAndDrop('#pool2 .card[data-key="ART-105"]', '#grid2 .cell[data-x="1"][data-y="1"]');
-  await page.dragAndDrop('#pool1 .card[data-key="ART-105"]', '#grid1 .cell[data-x="3"][data-y="1"]');
+  await page.dragAndDrop('.sw-pool[data-pool="2"] .sw-card[data-key="ART-105"]', '.sw-grid[data-grid="2"] .sw-cell[data-x="1"][data-y="1"]');
+  await page.dragAndDrop('.sw-pool[data-pool="1"] .sw-card[data-key="ART-105"]', '.sw-grid[data-grid="1"] .sw-cell[data-x="3"][data-y="1"]');
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#writeCsvBtn')]);
   assert.equal(dl.suggestedFilename(), 'jira-export.csv');
   const bytes = fs.readFileSync(await dl.path());
@@ -367,11 +367,11 @@ async function dragToStrip(page, cardSel, zoneSel) {
   await page.mouse.move(b.x + 20, b.y + 10);
   await page.mouse.down();
   await page.mouse.move(b.x + 30, b.y + 16, { steps: 3 });
-  await page.waitForSelector('#stripY:not([hidden])');
+  await page.waitForSelector('.sw-strip-y:not([hidden])');
   const z = await page.locator(zoneSel).boundingBox();
   await page.mouse.move(z.x + z.width / 2, z.y + z.height / 2, { steps: 5 });
   await page.mouse.up();
-  await page.waitForSelector('#stripY[hidden]', { state: 'attached' });
+  await page.waitForSelector('.sw-strip-y[hidden]', { state: 'attached' });
 }
 
 async function runPresentation(browser) {
@@ -381,58 +381,58 @@ async function runPresentation(browser) {
   const values = k => page.evaluate(key => { const i = WsjfSession.db.item(key); return [i.ubv, i.rroe, i.tc, i.jobSize]; }, k);
 
   // Lesbarkeit: Spalten breit genug für 50 Zeichen, Raster scrollt seitlich.
-  const colW = await page.$eval('#grid1 .cell', c => c.getBoundingClientRect().width);
+  const colW = await page.$eval('.sw-grid[data-grid="1"] .sw-cell', c => c.getBoundingClientRect().width);
   assert.ok(colW >= 220, 'Spaltenbreite ' + colW);
-  assert.ok(await page.$eval('#grid1', g => g.parentElement.scrollWidth > g.parentElement.clientWidth), 'Raster scrollt seitlich');
-  assert.equal(await page.$eval('#grid1 .card[data-key="ART-101"] .card-summary', e => e.scrollHeight <= e.clientHeight + 1), true, '«Self-Service Portal für Kunden» ganz lesbar');
+  assert.ok(await page.$eval('.sw-grid[data-grid="1"]', g => g.parentElement.scrollWidth > g.parentElement.clientWidth), 'Raster scrollt seitlich');
+  assert.equal(await page.$eval('.sw-grid[data-grid="1"] .sw-card[data-key="ART-101"] .sw-card-summary', e => e.scrollHeight <= e.clientHeight + 1), true, '«Self-Service Portal für Kunden» ganz lesbar');
 
   // Präsentationsmodus: P, Raster untereinander, Kopf- und Statusleiste weg, Grösse, Esc.
   await page.keyboard.press('p');
   assert.equal(await page.evaluate(() => document.body.classList.contains('presenting')), true);
-  assert.equal(await page.isVisible('#presentBar'), true);
+  assert.equal(await page.isVisible('.sw-present-bar'), true);
   assert.equal(await page.isVisible('.topbar'), false);
   assert.equal(await page.isVisible('.statusbar'), false);
-  assert.equal(await page.textContent('#presentTrain'), 'Workshop');
-  const [p1, p2] = await page.$$eval('.pair', ps => ps.map(p => p.getBoundingClientRect()));
+  assert.equal(await page.textContent('.sw-present-title'), 'Workshop');
+  const [p1, p2] = await page.$$eval('.sw-pair', ps => ps.map(p => p.getBoundingClientRect()));
   assert.ok(p2.top >= p1.bottom && Math.abs(p1.left - p2.left) < 1, 'untereinander');
-  assert.equal(await page.textContent('#zoomValue'), '100 %');
-  await page.click('#zoomIn');
+  assert.equal(await page.textContent('.sw-zoom-value'), '100 %');
+  await page.click('.sw-zoom-in');
   await page.keyboard.press('+');
-  assert.equal(await page.textContent('#zoomValue'), '120 %');
-  assert.equal(await page.$eval('#pairs', e => e.style.zoom), '1.2');
+  assert.equal(await page.textContent('.sw-zoom-value'), '120 %');
+  assert.equal(await page.$eval('.sw-pairs', e => e.style.zoom), '1.2');
   await page.keyboard.press('-');
-  assert.equal(await page.textContent('#zoomValue'), '110 %');
+  assert.equal(await page.textContent('.sw-zoom-value'), '110 %');
   step('Präsentationsmodus: untereinander, Grösse, Lesbarkeit');
 
   // Leisten neben dem gezogenen Ticket: rechts nur die Zeile, darunter nur die Spalte; aktueller Wert gesperrt.
-  await dragToStrip(page, '#grid1 .card[data-key="ART-101"]', '#stripY .strip-zone[data-value="13"]');
+  await dragToStrip(page, '.sw-grid[data-grid="1"] .sw-card[data-key="ART-101"]', '.sw-strip-y .sw-strip-zone[data-value="13"]');
   assert.deepEqual((await values('ART-101')).slice(0, 2), [8, 13]);
-  await dragToStrip(page, '#grid1 .card[data-key="ART-101"]', '#stripX .strip-zone[data-value="2"]');
+  await dragToStrip(page, '.sw-grid[data-grid="1"] .sw-card[data-key="ART-101"]', '.sw-strip-x .sw-strip-zone[data-value="2"]');
   assert.deepEqual((await values('ART-101')).slice(0, 2), [2, 13]);
-  assert.equal(await page.isVisible('#grid1 .cell[data-x="2"][data-y="13"] .card[data-key="ART-101"]'), true);
+  assert.equal(await page.isVisible('.sw-grid[data-grid="1"] .sw-cell[data-x="2"][data-y="13"] .sw-card[data-key="ART-101"]'), true);
   // Aus der Liste wie in der WSJF-App: fehlender Wert wird 1 (vorhandener bleibt).
-  await dragToStrip(page, '#pool2 .card[data-key="ART-105"]', '#stripX .strip-zone[data-value="8"]');
+  await dragToStrip(page, '.sw-pool[data-pool="2"] .sw-card[data-key="ART-105"]', '.sw-strip-x .sw-strip-zone[data-value="8"]');
   assert.deepEqual((await values('ART-105')).slice(2), [8, 1]);
-  await dragToStrip(page, '#pool1 .card[data-key="ART-105"]', '#stripY .strip-zone[data-value="5"]');
+  await dragToStrip(page, '.sw-pool[data-pool="1"] .sw-card[data-key="ART-105"]', '.sw-strip-y .sw-strip-zone[data-value="5"]');
   assert.deepEqual((await values('ART-105')).slice(0, 2), [3, 5]);
   // Gesperrter aktueller Wert nimmt nichts an.
-  const card = page.locator('#grid2 .card[data-key="ART-105"]');
+  const card = page.locator('.sw-grid[data-grid="2"] .sw-card[data-key="ART-105"]');
   await card.scrollIntoViewIfNeeded();
   const b = await card.boundingBox();
   await page.mouse.move(b.x + 20, b.y + 10);
   await page.mouse.down();
   await page.mouse.move(b.x + 30, b.y + 16, { steps: 3 });
-  await page.waitForSelector('#stripY:not([hidden])');
-  assert.equal(await page.$eval('#stripY .strip-zone.current', z => z.dataset.value), '1');
-  assert.equal(await page.$eval('#stripX .strip-zone.current', z => z.dataset.value), '8');
+  await page.waitForSelector('.sw-strip-y:not([hidden])');
+  assert.equal(await page.$eval('.sw-strip-y .sw-strip-zone.sw-current', z => z.dataset.value), '1');
+  assert.equal(await page.$eval('.sw-strip-x .sw-strip-zone.sw-current', z => z.dataset.value), '8');
   await page.mouse.up();
   await page.keyboard.press('Escape');
   assert.equal(await page.evaluate(() => document.body.classList.contains('presenting')), false);
   assert.equal(await page.isVisible('.topbar'), true);
-  assert.equal(await page.$eval('#pairs', e => e.style.zoom), '');
+  assert.equal(await page.$eval('.sw-pairs', e => e.style.zoom), '');
   await page.click('#presentBtn');
-  assert.equal(await page.textContent('#zoomValue'), '110 %', 'Grösse bleibt gemerkt');
-  await page.click('#presentExit');
+  assert.equal(await page.textContent('.sw-zoom-value'), '110 %', 'Grösse bleibt gemerkt');
+  await page.click('.sw-present-exit');
   assert.deepEqual(errors, []);
   await ctx.close();
   step('Leisten neben dem Ticket: Zeile, Spalte, aus der Liste, gesperrter Wert');
@@ -444,9 +444,9 @@ async function runEnglish(browser) {
   assert.equal(await page.textContent('#welcomeForm button'), 'Create');
   await createTrain(page, 'Train');
   await importFirst(page);
-  assert.match(await page.textContent('.ranking h2'), /^Prioritised list\s*\(5\)$/);
-  assert.match(await page.textContent('#rankBody tr[data-key="ART-104"]'), /Required/);
-  assert.equal(await page.textContent('#rankBody tr[data-key="ART-101"] td.score'), '3.20');
+  assert.match(await page.textContent('.sw-ranking h2'), /^Prioritised list\s*\(5\)$/);
+  assert.match(await page.textContent('.sw-rank-body tr[data-key="ART-104"]'), /Required/);
+  assert.equal(await page.textContent('.sw-rank-body tr[data-key="ART-101"] td.sw-score'), '3.20');
   await menu(page, '#dbMenuBtn', 'Deutsch');
   await page.waitForSelector(READY);
   assert.equal(await page.textContent('#csvMenuBtn'), 'CSV');
