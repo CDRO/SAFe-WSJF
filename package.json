@@ -1,9 +1,21 @@
 {
   "name": "safe-wsjf",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "WSJF-Priorisierung nach SAFe: läuft als Datei im Browser, speichert in SQLite (sql.js), liest und schreibt Jira-CSV-Exporte. Kein Server, keine Installation.",
   "license": "MIT",
+  "files": [
+    "src/js/i18n.js",
+    "src/lang/de.js",
+    "src/lang/en.js",
+    "src/js/wsjf.js",
+    "src/js/palette.js",
+    "src/js/wiki.js",
+    "src/js/grid.js",
+    "src/css/grid.css",
+    "LICENSE",
+    "NOTICE"
+  ],
   "scripts": {
     "build": "node tools/build.cjs",
     "test": "node tools/build.cjs && node tools/i18n.cjs check && node test/core.cjs && node test/app.cjs",

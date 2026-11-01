@@ -456,6 +456,206 @@ async function runEnglish(browser) {
   step('Englisch und Sprachwechsel');
 }
 
+// ---------- Eingebettet: grid.js auf einer fremden Seite mit Quelle im Speicher ----------
+
+/** Seite eines Gastgebers aus der Liste «files» in package.json: nur diese Dateien, in dieser Reihenfolge. */
+function writeEmbedPage() {
+  const files = require(path.join(ROOT, 'package.json')).files.filter(f => f.startsWith('src/'));
+  const rel = f => path.relative(path.join(DIST, 'embed-test'), path.join(DIST, f.replace(/^src\//, ''))).split(path.sep).join('/');
+  for (const f of files) assert.ok(fs.existsSync(path.join(DIST, f.replace(/^src\//, ''))), 'im Paket: ' + f);
+  const html = `<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><title>Gastgeber</title>
+${files.filter(f => f.endsWith('.css')).map(f => `<link rel="stylesheet" href="${rel(f)}">`).join('\n')}
+<style>body { margin: 0; font: 14px sans-serif; } #host { padding: 8px; }</style></head>
+<body>
+<div class="host-bar"><button type="button" id="hostBtn">Host</button><input id="hostInput"></div>
+<div id="host"></div>
+${files.filter(f => f.endsWith('.js')).map(f => `<script src="${rel(f)}"></script>`).join('\n')}
+<script>
+  /** Quelle im Speicher wie bei einem Gastgeber: list, setValues, setState, subscribe; undo nur auf Wunsch. */
+  window.memorySource = function (items, withUndo) {
+    const data = items.map(i => Object.assign({ status: '', type: '', team: '', labels: [], description: '', ubv: null, rroe: null, tc: null, jobSize: null, state: 'open' }, i));
+    const subs = new Set();
+    const log = [];
+    const find = key => data.find(d => d.key === key);
+    const src = {
+      data, log,
+      async list() { return JSON.parse(JSON.stringify(data)); },
+      async setValues(key, patch) { log.push(['setValues', key, patch]); Object.assign(find(key), patch); },
+      async setState(key, state) { log.push(['setState', key, state]); find(key).state = state; },
+      subscribe(cb) { subs.add(cb); return () => subs.delete(cb); },
+      emit() { subs.forEach(cb => cb()); },
+      subscribers: () => subs.size,
+    };
+    if (withUndo) src.undo = async () => { log.push(['undo']); };
+    return src;
+  };
+  window.mount = function (src, extra) {
+    window.__events = [];
+    const ev = name => (...a) => window.__events.push([name, ...a]);
+    window.__src = src;
+    window.__grid = SafeWsjf.create(document.getElementById('host'), Object.assign({
+      source: src, scale: [1, 2, 3, 5, 8, 13, 20], required: { ubv: 100, rroe: 100, tc: 100, jobSize: 1 }, hide: true,
+      prefs: { colors: { 1: 'smaragd', 2: 'gold' }, zoom: 1 }, onPrefs: ev('prefs'), onPresent: ev('present'), notify: ev('notify'), onError: ev('error'),
+    }, extra || {}));
+    return window.__grid.refresh();
+  };
+</script>
+</body></html>
+`;
+  fs.mkdirSync(path.join(DIST, 'embed-test'), { recursive: true });
+  const file = path.join(DIST, 'embed-test', 'index.html');
+  fs.writeFileSync(file, html);
+  return 'file://' + file;
+}
+
+const EMBED_ITEMS = [
+  { key: 'E-1', summary: 'Eins', team: 'Rot', ubv: 8, rroe: 3, tc: 5, jobSize: 5, description: '**fett**' },
+  { key: 'E-2', summary: 'Zwei', team: 'Blau' },
+  { key: 'E-3', summary: 'Drei', state: 'hidden', labels: ['informell'] },
+  { key: 'E-4', summary: 'Vier', state: 'required' },
+  { key: 'E-5', summary: 'Fünf', ubv: 13, rroe: 8, tc: 8, jobSize: 3 },
+];
+
+async function runEmbed(browser) {
+  const url = writeEmbedPage();
+  const ctx = await browser.newContext({ locale: 'de-CH', viewport: { width: 1400, height: 1000 } });
+  const page = await ctx.newPage();
+  const errors = watchErrors(page);
+  await page.goto(url);
+  const data = key => page.evaluate(k => { const d = window.__src.data.find(x => x.key === k); return [d.ubv, d.rroe, d.tc, d.jobSize, d.state]; }, key);
+  const events = name => page.evaluate(n => window.__events.filter(e => e[0] === n).map(e => e.slice(1)), name);
+
+  // Standard: eigene Texte (Deutsch), eigener Dialog mit Wiki-Darstellung, Rückgängig über den eigenen Stapel.
+  await page.evaluate(items => mount(memorySource(items, false), {
+    renderDescription: it => '<b class="host-md">' + it.description.replace(/\*/g, '') + '</b>',
+    labels: { title: 'PI 26.4' },
+  }), EMBED_ITEMS);
+  assert.equal(await page.$$eval('#host > .safe-wsjf', r => r.length), 1);
+  assert.equal(await page.isVisible('.sw-grid[data-grid="1"] .sw-cell[data-x="8"][data-y="3"] .sw-card[data-key="E-1"]'), true);
+  assert.equal(await page.isVisible('.sw-pool[data-pool="1"] .sw-card[data-key="E-2"]'), true);
+  assert.deepEqual(await page.$$eval('.sw-grid', gs => gs.map(g => g.dataset.color)), ['smaragd', 'gold']);
+  assert.deepEqual(await rankKeys(page), ['E-4', 'E-5', 'E-1', 'E-2']);
+  assert.match(await page.textContent('.sw-rank-body tr[data-key="E-4"]'), /Erforderlich/);
+  assert.equal(await page.textContent('.sw-rank-body tr[data-key="E-5"] td.sw-score'), '9.67');
+  assert.equal(await page.textContent('.sw-hidden-count'), '(1)');
+  assert.equal(await page.textContent('.sw-ranking th:nth-child(2)'), 'Schlüssel');
+  assert.equal(await page.evaluate(() => window.__src.subscribers()), 1);
+  step('Eingebettet: Raster, Farben, priorisierte Liste aus der Quelle');
+
+  // Ziehen ins Raster und auf die Leisten.
+  await page.dragAndDrop('.sw-pool[data-pool="1"] .sw-card[data-key="E-2"]', '.sw-grid[data-grid="1"] .sw-cell[data-x="5"][data-y="2"]');
+  await page.waitForSelector('.sw-grid[data-grid="1"] .sw-cell[data-x="5"][data-y="2"] .sw-card[data-key="E-2"]');
+  assert.deepEqual(await data('E-2'), [5, 2, null, null, 'open']);
+  await dragToStrip(page, '.sw-grid[data-grid="1"] .sw-card[data-key="E-1"]', '.sw-strip-y .sw-strip-zone[data-value="13"]');
+  assert.deepEqual((await data('E-1')).slice(0, 2), [8, 13]);
+  await dragToStrip(page, '.sw-pool[data-pool="2"] .sw-card[data-key="E-2"]', '.sw-strip-x .sw-strip-zone[data-value="8"]');
+  assert.deepEqual((await data('E-2')).slice(2, 4), [8, 1]);
+  step('Eingebettet: Ziehen ins Raster, Leisten neben dem Ticket');
+
+  // Ablagefelder: erforderlich, ausblenden, wieder einblenden; Ctrl+Z über den eigenen Stapel.
+  await page.evaluate(() => __grid.drop('E-2', document.querySelector('.sw-drop-zone[data-zone="required"]')));
+  assert.deepEqual((await rankKeys(page)).slice(0, 2), ['E-2', 'E-4']);
+  assert.equal((await events('notify'))[0][0], 'E-2 ist erforderlich und steht oben in der Liste.');
+  await page.evaluate(() => __grid.drop('E-1', document.querySelector('.sw-drop-zone[data-zone="hidden"]')));
+  assert.equal(await page.textContent('.sw-hidden-count'), '(2)');
+  assert.equal((await data('E-1'))[4], 'hidden');
+  await page.click('.sw-hidden-box summary');
+  await page.click('.sw-hidden-list li[data-key="E-3"] button');
+  assert.equal(await page.textContent('.sw-hidden-count'), '(1)');
+  await page.keyboard.press('Control+z');
+  assert.equal(await page.textContent('.sw-hidden-count'), '(2)');
+  await page.keyboard.press('Control+z');
+  assert.equal(await page.textContent('.sw-hidden-count'), '(1)');
+  assert.equal((await data('E-1'))[4], 'open');
+  await page.keyboard.press('Control+z');
+  assert.equal((await data('E-2'))[4], 'open');
+  await page.evaluate(() => __grid.drop('E-5', document.querySelector('.sw-drop-zone[data-zone="clear"]')));
+  assert.deepEqual(await data('E-5'), [null, null, null, null, 'open']);
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await data('E-5'), [13, 8, 8, 3, 'open']);
+  step('Eingebettet: Erforderlich, Ausblenden, Einblenden, Werte löschen, Ctrl+Z');
+
+  // Eigener Dialog: Werte wählen, Beschreibung vom Gastgeber, Zustand.
+  await page.click('.sw-rank-body tr[data-key="E-1"]');
+  await page.waitForSelector('.sw-dialog[open] select[data-field="tc"]');
+  assert.equal(await page.textContent('.sw-dialog .sw-wiki .host-md'), 'fett');
+  await page.selectOption('.sw-dialog select[data-field="tc"]', '20');
+  assert.match(await page.textContent('.sw-dialog .sw-item-score'), /8\.20/);
+  assert.equal((await data('E-1'))[2], 20);
+  await page.click('.sw-dialog [data-state="required"]');
+  assert.equal(await page.$eval('.sw-dialog select[data-field="tc"]', s => s.disabled), true);
+  assert.match(await page.textContent('.sw-dialog .sw-item-score'), /300\.00/);
+  await page.click('.sw-dialog [data-state="open"]');
+  await page.click('.sw-dialog .sw-close');
+  assert.equal(await page.isVisible('.sw-dialog'), false);
+  step('Eingebettet: Ticket-Dialog, Beschreibung vom Gastgeber');
+
+  // Änderung von aussen: subscribe.
+  await page.evaluate(() => { window.__src.data.find(d => d.key === 'E-2').ubv = 20; window.__src.emit(); });
+  await page.waitForFunction(() => document.querySelector('.sw-rank-body tr[data-key="E-2"] td:nth-child(5)').textContent === '20');
+  step('Eingebettet: Änderung der Quelle über subscribe');
+
+  // Präsentationsmodus: Vollbild des Containers, Grösse, onPrefs; Tasten nicht in Feldern des Gastgebers.
+  await page.focus('#hostInput');
+  await page.keyboard.press('p');
+  assert.equal(await page.evaluate(() => document.querySelector('.safe-wsjf').classList.contains('sw-presenting')), false, 'P im Feld des Gastgebers');
+  await page.click('#hostBtn');
+  await page.keyboard.press('p');
+  assert.equal(await page.evaluate(() => document.querySelector('.safe-wsjf').classList.contains('sw-presenting')), true);
+  assert.equal(await page.isVisible('.sw-present-bar'), true);
+  assert.equal(await page.textContent('.sw-present-title'), 'PI 26.4');
+  assert.deepEqual(await events('present'), [[true]]);
+  await page.keyboard.press('+');
+  assert.equal(await page.textContent('.sw-zoom-value'), '110 %');
+  assert.equal(await page.$eval('.sw-pairs', e => e.style.zoom), '1.1');
+  assert.deepEqual((await events('prefs')).pop()[0].zoom, 1.1);
+  await page.evaluate(() => __grid.setZoom(5));
+  assert.equal(await page.textContent('.sw-zoom-value'), '200 %');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => document.querySelector('.safe-wsjf').classList.contains('sw-presenting')), false);
+  assert.equal(await page.$eval('.sw-pairs', e => e.style.zoom), '');
+  await page.evaluate(() => __grid.present(true));
+  assert.equal(await page.isVisible('.sw-present-bar'), true);
+  await page.click('.sw-present-exit');
+  assert.deepEqual(await events('present'), [[true], [false], [true], [false]]);
+  step('Eingebettet: Präsentationsmodus, Grösse, Tasten nur ausserhalb von Feldern');
+
+  // Abbauen: nichts bleibt zurück.
+  await page.evaluate(() => __grid.destroy());
+  assert.equal(await page.$('#host .safe-wsjf'), null);
+  assert.equal(await page.evaluate(() => window.__src.subscribers()), 0);
+  await page.keyboard.press('p');
+  assert.deepEqual(errors, []);
+
+  // Gastgeber mit eigener Übersetzung, eigenem Dialog, undo in der Quelle, ohne «Erforderlich» und «Ausblenden».
+  await page.evaluate(items => mount(memorySource(items, true), {
+    required: false, hide: false, labels: { keyLabel: 'ID' },
+    i18n: { lang: 'en', t: (key, p) => (key === 'Offen' ? 'Open (host)' : key.replace(/\{(\w+)\}/g, (m, k) => (p && k in p ? p[k] : m))) },
+    onOpen: key => window.__events.push(['open', key]),
+  }), EMBED_ITEMS);
+  assert.match(await page.textContent('.sw-pool[data-pool="1"] h2'), /^Open \(host\)/);
+  assert.match(await page.textContent('.sw-ranking h2'), /^Prioritised list/, 'Text aus dem Sprachpaket des Bausteins');
+  assert.equal(await page.textContent('.sw-ranking th:nth-child(2)'), 'ID');
+  assert.equal(await page.textContent('.sw-rank-body tr[data-key="E-5"] td.sw-score'), '9.67');
+  assert.equal(await page.$eval('.sw-drop-zone[data-zone="required"]', z => z.hidden), true);
+  assert.equal(await page.$eval('.sw-drop-zone[data-zone="hidden"]', z => z.hidden), true);
+  assert.equal(await page.$eval('.sw-hidden-box', z => z.hidden), false, 'ausgeblendete Tickets der Quelle bleiben erreichbar');
+  await page.evaluate(() => __grid.drop('E-2', document.querySelector('.sw-drop-zone[data-zone="required"]')));
+  assert.equal((await data('E-2'))[4], 'open', 'ohne «Erforderlich» kein Ablegen');
+  await page.click('.sw-pool[data-pool="1"] .sw-card[data-key="E-2"]');
+  assert.deepEqual(await events('open'), [['E-2']]);
+  assert.equal(await page.$('.sw-dialog[open]'), null);
+  await page.dragAndDrop('.sw-pool[data-pool="1"] .sw-card[data-key="E-2"]', '.sw-grid[data-grid="1"] .sw-cell[data-x="1"][data-y="1"]');
+  await page.waitForSelector('.sw-grid[data-grid="1"] .sw-cell[data-x="1"][data-y="1"] .sw-card[data-key="E-2"]');
+  await page.click('#hostBtn');
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await page.evaluate(() => window.__src.log.pop()), ['undo']);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+  step('Eingebettet: eigene Übersetzung, eigener Dialog, undo der Quelle, ohne Erforderlich und Ausblenden');
+}
+
 (async () => {
   let browser = null;
   const started = Date.now();
@@ -466,6 +666,7 @@ async function runEnglish(browser) {
     await runNoFsa(browser);
     await runPresentation(browser);
     await runEnglish(browser);
+    await runEmbed(browser);
     console.log(`\nApp-Test bestanden (${Math.round((Date.now() - started) / 1000)} s).`);
   } catch (e) {
     console.error('\nApp-Test FEHLGESCHLAGEN');

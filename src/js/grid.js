@@ -648,6 +648,7 @@
       const v = !!want;
       if (v === S.presenting || S.destroyed) return;
       S.presenting = v;
+      S.fullscreen = false;
       root.classList.toggle('sw-presenting', v);
       if (v) {
         if (container.requestFullscreen && !document.fullscreenElement) container.requestFullscreen().catch(() => {});
@@ -658,7 +659,12 @@
       if (typeof opts.onPresent === 'function') opts.onPresent(v);
     }
 
-    on(document, 'fullscreenchange', () => { if (!document.fullscreenElement && S.presenting) present(false); });
+    // Verlässt der Browser das Vollbild (Esc, F11), endet auch der Präsentationsmodus; nur wenn er es für diesen Container war.
+    on(document, 'fullscreenchange', () => {
+      if (document.fullscreenElement === container) { S.fullscreen = S.presenting; return; }
+      if (S.fullscreen && S.presenting) { S.fullscreen = false; present(false); }
+      S.fullscreen = false;
+    });
     on(window, 'resize', applyZoom);
     on(document, 'wheel', e => {
       if (!S.presenting || !e.ctrlKey) return;

@@ -125,11 +125,90 @@ Zug entfernen (die Dateien auf der Platte bleiben).
 dieselbe Farbe haben. Die Zellen gehen wie in der WSJF-App von hell oben links nach dunkel unten rechts, dort liegen die
 wichtigeren Werte. Vorgabe: oben blau, unten rot.
 
+## Einbetten
+
+Die zwei Raster, die priorisierte Liste und der Präsentationsmodus lassen sich in eine andere Anwendung einbauen, die
+ihre eigenen Einträge (Epics, Features …) bewerten lässt. Die Daten bleiben beim Gastgeber; der Baustein liest und
+schreibt sie über eine Quelle. Für Jira-Nutzer der App ändert sich dadurch nichts.
+
+**Dateien.** Der Gastgeber kopiert die Dateien aus `files` in `package.json` (im ZIP ohne `src/`) und lädt sie in
+dieser Reihenfolge:
+
+```html
+<link rel="stylesheet" href="safe-wsjf/css/grid.css">
+<script src="safe-wsjf/js/i18n.js"></script>
+<script src="safe-wsjf/lang/de.js"></script>
+<script src="safe-wsjf/lang/en.js"></script>
+<script src="safe-wsjf/js/wsjf.js"></script>     <!-- WSJF, Rangfolge -->
+<script src="safe-wsjf/js/palette.js"></script>  <!-- Farben der Raster -->
+<script src="safe-wsjf/js/wiki.js"></script>     <!-- nur für die Vorgabe von renderDescription -->
+<script src="safe-wsjf/js/grid.js"></script>     <!-- window.SafeWsjf -->
+```
+
+LICENSE und NOTICE gehören dazu (MIT).
+
+**Aufruf.** `SafeWsjf.create(container, options)` baut alles in `container` und liefert
+`{ refresh(), destroy(), present(on), setZoom(z) }` (dazu `drop(key, element)` für Tests).
+
+| Option | Bedeutung |
+| --- | --- |
+| `source` | die Quelle (unten), Pflicht |
+| `scale` | Zahlen der Spalten und Zeilen, Vorgabe `[1, 2, 3, 5, 8, 13, 20]` |
+| `required` | `{ ubv, rroe, tc, jobSize }`: feste Werte für «Erforderlich» (Rangfolge oben, Dialog zeigt sie); `false` blendet das Ablagefeld und den Zustand aus |
+| `hide` | `false` blendet das Ablagefeld «Ausblenden» und den Zustand aus (Vorgabe `true`) |
+| `i18n` | `{ t, lang }`: Übersetzen des Gastgebers; Schlüssel sind die deutschen Texte. Gibt `t` einen Text unverändert zurück, gilt das Sprachpaket des Bausteins für `lang`. Ohne `i18n` die Sprache von `WsjfI18n` (Deutsch oder Englisch) |
+| `prefs`, `onPrefs(prefs)` | `{ colors: { 1: 'himmelblau', 2: 'koralle' }, zoom: 1 }` (Farben aus `palette.js`, Grösse 0.75 bis 2); `onPrefs` meldet eine neue Grösse zum Merken |
+| `onOpen(key)` | Klick auf ein Ticket öffnet den Dialog des Gastgebers; ohne: der Dialog des Bausteins (Werte, Zustand, Beschreibung) |
+| `renderDescription(item)` | HTML der Beschreibung im Dialog des Bausteins (z. B. Markdown des Gastgebers); Vorgabe: Jira-Wiki-Markup über `wiki.js`. Das HTML muss sicher sein |
+| `labels` | `{ keyLabel, title }`: Spaltenkopf des Schlüssels, Titel in der Leiste des Präsentationsmodus |
+| `matches(item)` | `false` blendet ein Ticket abgeschwächt (Suche des Gastgebers) |
+| `notify(text, kind)`, `onError(e)` | Meldungen (z. B. «erforderlich») und Fehler der Quelle; Vorgabe: keine Meldung, `console.error` |
+| `onPresent(on)` | der Präsentationsmodus beginnt oder endet |
+
+Die Optionen werden bei jedem `refresh()` neu gelesen: `scale`, `required`, `prefs` oder `labels` ändern, dann
+`refresh()` aufrufen.
+
+**Quelle.** Alle Methoden liefern Promises.
+
+| Methode | |
+| --- | --- |
+| `list()` | `[{ key, summary, status, type, team, labels, description, ubv, rroe, tc, jobSize, state }]`, `state` ist `'open'`, `'required'` oder `'hidden'`; Werte `null` = leer. Freiwillig: `assignee`, `href` (Link auf dem Schlüssel), `dirty`, `conflict`, `base` (die Markierungen der Jira-App) |
+| `setValues(key, patch)` | ändert einen Teil der vier Werte, z. B. `{ ubv: 8, rroe: 3 }` oder `{ tc: null }` |
+| `setState(key, state)` | ändert den Zustand |
+| `undo()` | freiwillig: macht den letzten Schritt rückgängig (Ctrl+Z). Ohne merkt sich der Baustein die Schritte selbst und setzt sie über `setValues`/`setState` zurück |
+| `subscribe(cb)` | freiwillig: `cb()` bei Änderungen von aussen, Rückgabe: Abmelden |
+
+**Tastatur.** `P` Präsentationsmodus, `+` / `−` Grösse, `Esc` beenden, `Ctrl+Z` rückgängig – solange der Baustein
+sichtbar ist, kein Dialog offen ist und der Fokus nicht in einem Feld steht. Ein Gastgeber, der eine Taste selbst
+braucht, ruft `preventDefault()` auf, bevor sie beim Dokument ankommt. Der Präsentationsmodus ist das Vollbild von
+`container`.
+
+**Aussehen.** `grid.css` hängt an `.safe-wsjf`, alle Klassen beginnen mit `sw-`. Farben, Schrift und Grössen sind
+Variablen (`--sw-bg`, `--sw-panel`, `--sw-text`, `--sw-muted`, `--sw-line`, `--sw-accent`, `--sw-required`,
+`--sw-font`, `--sw-font-size`, `--sw-col-min`, `--sw-pool-width` …, Liste am Anfang von `grid.css`). Die Schrift
+erbt der Baustein vom Gastgeber.
+
+**Kleinstes Beispiel:**
+
+```html
+<div id="wsjf"></div>
+<script>
+  const items = [{ key: 'EP-1', summary: 'Neues Portal', ubv: 8, rroe: 3, tc: 5, jobSize: 5, state: 'open' }];
+  const source = {
+    async list() { return items; },
+    async setValues(key, patch) { Object.assign(items.find(i => i.key === key), patch); },
+    async setState(key, state) { items.find(i => i.key === key).state = state; },
+  };
+  const grid = SafeWsjf.create(document.getElementById('wsjf'), { source, i18n: { t: s => s, lang: 'en' } });
+</script>
+```
+
 ## Technik
 
 | Teil | Umsetzung |
 | --- | --- |
 | Oberfläche | `index.html`, `css/app.css`, `js/app.js`: reines HTML/CSS/JS, keine Frameworks, nichts gebündelt |
+| Raster | `js/grid.js`, `css/grid.css`: Raster, Liste, Ziehen, Präsentationsmodus als einbettbarer Baustein (siehe «Einbetten»); `app.js` ist sein Gastgeber |
 | CSV | `js/csv.js`: RFC 4180, Trennzeichen erkennen, Zeichensätze, Originaltext je Zeile für den verlustfreien Rundweg |
 | Beschreibung | `js/wiki.js`: Jira-Wiki-Markup als HTML, aller Text escaped, nur sichere Links |
 | Farben | `js/palette.js`: 32 Farben (Farbton, Sättigung); Helligkeit der Zelle aus ihren Werten in `css/app.css` |
@@ -177,7 +256,7 @@ npm run build        # schreibt dist/SAFe-WSJF
 | --- | --- |
 | `tools/i18n.cjs check` | alle Texte der Oberfläche haben eine englische Übersetzung, keine überzähligen |
 | `test/core.cjs` (ohne Browser) | Jira-Wiki-Markup, CSV (Felder, Zeilenenden, Zeichensätze, Rundweg), WSJF, Rangfolge, Zuordnung, Zusammenführen, Datenbank |
-| `test/app.cjs` | das Gebaute per `file://` in headless Chromium: Zug anlegen, Einlesen mit Zuordnung, Ziehen, Leisten neben dem Ticket, Präsentationsmodus, Dialog, Rückgängig, Zurückschreiben, erneut Einlesen, Datenbankdatei, mehrere Züge, Firefox-Weg (Download), Englisch |
+| `test/app.cjs` | das Gebaute per `file://` in headless Chromium: Zug anlegen, Einlesen mit Zuordnung, Ziehen, Leisten neben dem Ticket, Präsentationsmodus, Dialog, Rückgängig, Zurückschreiben, erneut Einlesen, Datenbankdatei, mehrere Züge, Firefox-Weg (Download), Englisch; dazu `grid.js` allein auf einer Gastgeberseite aus den Dateien von `files` mit einer Quelle im Speicher |
 
 ```bash
 npm install
