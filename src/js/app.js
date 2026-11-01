@@ -1,5 +1,6 @@
-/* SAFe WSJF – Oberfläche: Raster, Listen, Menüs, Dialoge, Einlesen und Zurückschreiben der CSV.
-   Reines DOM ohne Bibliotheken. Die Daten liegen in WsjfSession.db (SQLite), jede Änderung ruft WsjfSession.changed(). */
+/* SAFe WSJF – Oberfläche der App: Menüs, Dialoge, Einstellungen, Präferenzen, Hilfe, Einlesen und Zurückschreiben der CSV.
+   Die Raster, die priorisierte Liste und der Präsentationsmodus kommen aus grid.js (SafeWsjf); app.js ist dessen
+   Gastgeber und gibt ihm eine Quelle über WsjfSession.db (SQLite). Jede Änderung ruft WsjfSession.changed(). */
 (function (global) {
   'use strict';
 
@@ -26,11 +27,6 @@
     return e;
   };
 
-  /** Werte je Raster: x und y. */
-  const GRIDS = {
-    1: { x: 'ubv', y: 'rroe' },
-    2: { x: 'tc', y: 'jobSize' },
-  };
   const FIELD_SHORT = { ubv: 'UBV', rroe: 'RROE', tc: 'TC', jobSize: 'Job Size' };
 
   const state = {
@@ -38,23 +34,12 @@
     settings: null,
     search: '',
     undo: [],
-    dragKey: null,
-    descRaw: false,
     presenting: false,
   };
 
   const db = () => Session.db;
 
   // ---------- Hilfen ----------
-
-  function fmtScore(v) {
-    if (v == null) return '–';
-    return v.toLocaleString(I18n.locale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-
-  function fmtValue(v) {
-    return v == null ? '–' : Number(v).toLocaleString(I18n.locale(), { maximumFractionDigits: 2 });
-  }
 
   function jiraLink(key) {
     const base = (state.settings && state.settings.jiraUrl || '').trim().replace(/\/+$/, '');
@@ -267,27 +252,51 @@
     if (ok === 'yes' && await Session.importCopy()) toast(t('Kopie importiert.'));
   }
 
-  // ---------- Änderungen mit Rückgängig ----------
+  // ---------- Quelle für das Raster (grid.js) mit Rückgängig ----------
+
+  /* Das Raster ruft setValues und setState einzeln auf; was im selben Durchgang der Ereignisschleife kommt (z. B. Werte
+     und Zustand beim Ablegen), ist ein Schritt für Ctrl+Z. */
+  let group = null;
 
   function snapshot(key) {
-    const it = state.items.find(i => i.key === key);
+    const it = db().item(key);
     return it ? { key, values: { ubv: it.ubv, rroe: it.rroe, tc: it.tc, jobSize: it.jobSize }, state: it.state } : null;
   }
 
+  function pushUndo(snaps, always) {
+    if (!snaps.length && !always) return;
+    state.undo.push(snaps);
+    if (state.undo.length > 50) state.undo.shift();
+  }
+
+  function record(key) {
+    const s = snapshot(key);
+    if (!s) return;
+    if (!group) {
+      group = [];
+      pushUndo(group, true);
+      const mine = group;
+      setTimeout(() => { if (group === mine) group = null; }, 0);
+    }
+    if (!group.some(x => x.key === key)) group.push(s);
+  }
+
+  /** Änderung an mehreren Tickets als ein Schritt (Label-Schalter). */
   function mutate(keys, fn) {
-    const snaps = keys.map(snapshot).filter(Boolean);
-    if (snaps.length) { state.undo.push(snaps); if (state.undo.length > 50) state.undo.shift(); }
+    group = null;
+    pushUndo(keys.map(snapshot).filter(Boolean));
     fn();
     Session.changed();
     refresh();
   }
 
   function undo() {
+    group = null;
     const snaps = state.undo.pop();
-    if (!snaps) return;
+    if (!snaps || !db()) return;
     db().transaction(() => {
       for (const s of snaps) {
-        if (!state.items.some(i => i.key === s.key)) continue;
+        if (!db().item(s.key)) continue;
         db().setValues(s.key, s.values);
         db().setState(s.key, s.state);
       }
@@ -297,8 +306,76 @@
     toast(t('Rückgängig gemacht.'));
   }
 
-  function setValues(key, patch) { mutate([key], () => db().setValues(key, patch)); }
-  function setItemState(key, st) { mutate([key], () => db().setState(key, st)); }
+  const subscribers = new Set();
+
+  const source = {
+    async list() {
+      const d = db();
+      if (!d) return [];
+      const s = d.settings();
+      return d.items().filter(i => i.inCsv).map(i => ({
+        key: i.key, summary: i.summary, status: i.status, type: i.issueType, team: i.team, assignee: i.assignee,
+        labels: i.labels, description: i.description, ubv: i.ubv, rroe: i.rroe, tc: i.tc, jobSize: i.jobSize, state: i.state,
+        base: i.base, conflict: i.conflict, dirty: Core.isDirty(i, s.required), href: jiraLink(i.key),
+      }));
+    },
+    async setValues(key, patch) {
+      if (!db() || !db().item(key)) return;
+      record(key);
+      db().setValues(key, patch);
+      changedByGrid();
+    },
+    async setState(key, st) {
+      if (!db() || !db().item(key)) return;
+      record(key);
+      db().setState(key, st);
+      changedByGrid();
+    },
+    async undo() { undo(); },
+    subscribe(cb) { subscribers.add(cb); return () => subscribers.delete(cb); },
+  };
+
+  /** Nach einer Änderung im Raster: speichern und die Teile der App neu zeichnen (das Raster zeichnet sich selbst). */
+  function changedByGrid() {
+    Session.changed();
+    state.items = db().items();
+    renderExtras();
+    renderStatus();
+  }
+
+  let grid = null;
+  const gridOptions = {
+    source,
+    scale: Core.DEFAULT_SCALE,
+    required: Core.DEFAULT_REQUIRED,
+    hide: true,
+    prefs: { colors: Object.assign({}, Palette.DEFAULTS), zoom: 1 },
+    onPrefs: p => {
+      const prefs = loadPrefs();
+      prefs.presentZoom = p.zoom;
+      savePrefs(prefs);
+    },
+    renderDescription: it => global.WsjfWiki.render(it.description, { jiraUrl: state.settings ? state.settings.jiraUrl : '' }),
+    labels: { title: '' },
+    matches: it => matches(it),
+    notify: (text, kind) => toast(text, kind),
+    onError: e => fail(e),
+    onPresent: on => {
+      state.presenting = on;
+      document.body.classList.toggle('presenting', on);
+      if (on) hideMenu();
+      // Im Vollbild des Rasters sind nur seine Kinder sichtbar: die Meldungen kommen mit.
+      (on ? $('#wsjf') : document.body).append($('#toasts'));
+    },
+  };
+
+  function syncGridOptions() {
+    const prefs = loadPrefs();
+    gridOptions.scale = state.settings.scale;
+    gridOptions.required = state.settings.required;
+    gridOptions.labels.title = Session.info().trainName || '';
+    gridOptions.prefs = { colors: prefs.gridColors, zoom: presentZoom() };
+  }
 
   // ---------- Zeichnen ----------
 
@@ -307,7 +384,7 @@
     const info = Session.info();
     $('#trainName').textContent = info.trainName || t('Kein Zug');
     if (!d) {
-      if (state.presenting) setPresenting(false);
+      if (state.presenting) grid.present(false);
       $('#welcome').hidden = false;
       $('#board').hidden = true;
       $('#banner').hidden = true;
@@ -320,117 +397,15 @@
     state.settings = d.settings();
     const hasCsv = d.hasCsv();
     $('#emptyState').hidden = hasCsv || state.items.length > 0;
-    $('#pairs').hidden = !hasCsv && !state.items.length;
-    document.querySelector('.ranking').hidden = !hasCsv && !state.items.length;
-    renderGrids();
-    renderRanking();
+    $('#wsjf').hidden = !hasCsv && !state.items.length;
+    syncGridOptions();
+    renderExtras();
     renderStatus();
-    $('#presentTrain').textContent = info.trainName;
+    for (const cb of subscribers) cb();
   }
 
-  function renderGrids() {
-    const scale = state.settings.scale;
-    const min = scale[0];
-    const max = scale[scale.length - 1];
-    const norm = v => (max > min ? (Number(v) - min) / (max - min) : 0);
-    applyGridColors();
-    const active = state.items.filter(i => i.state === 'open' && i.inCsv);
-    for (const n of [1, 2]) {
-      const g = GRIDS[n];
-      const grid = $('#grid' + n);
-      grid.innerHTML = '';
-      grid.style.setProperty('--cols', scale.length);
-      grid.append(el('div', { class: 'corner' }));
-      for (const x of scale) grid.append(el('div', { class: 'head head-x', text: fmtValue(x) }));
-      const placed = new Map();
-      const pool = [];
-      for (const it of active) {
-        const x = it[g.x];
-        const y = it[g.y];
-        if (x != null && y != null && scale.includes(Number(x)) && scale.includes(Number(y))) {
-          const k = `${Number(x)}|${Number(y)}`;
-          if (!placed.has(k)) placed.set(k, []);
-          placed.get(k).push(it);
-        } else pool.push(it);
-      }
-      scale.forEach(y => {
-        grid.append(el('div', { class: 'head head-y', text: fmtValue(y) }));
-        scale.forEach(x => {
-          const cell = el('div', {
-            class: 'cell', dataset: { grid: String(n), x: String(x), y: String(y) },
-            title: `${t(Core.FIELDS.find(f => f.id === g.x).label)}: ${fmtValue(x)} · ${t(Core.FIELDS.find(f => f.id === g.y).label)}: ${fmtValue(y)}`,
-          });
-          // Wie in der WSJF-App: hell oben links, dunkel unten rechts, nach dem Wert (nicht der Stelle) der Zeile und Spalte.
-          cell.style.setProperty('--nx', norm(x).toFixed(3));
-          cell.style.setProperty('--ny', norm(y).toFixed(3));
-          for (const it of (placed.get(`${x}|${y}`) || []).sort((a, b) => Core.naturalCompare(a.key, b.key))) cell.append(card(it, 'cell'));
-          grid.append(cell);
-        });
-      });
-      const list = $('#pool' + n);
-      list.innerHTML = '';
-      pool.sort((a, b) => Core.naturalCompare(a.key, b.key));
-      for (const it of pool) list.append(card(it, 'pool', n));
-      $(`#pool${n}Count`).textContent = `(${pool.length})`;
-      if (!pool.length) list.append(el('p', { class: 'pool-empty', text: active.length ? t('Alle Tickets sind eingeordnet.') : t('Keine offenen Tickets.') }));
-    }
-  }
-
-  function card(it, where, gridNo) {
-    const dirty = Core.isDirty(it, state.settings.required);
-    const c = el('div', {
-      class: `card card-${where}` + (matches(it) ? '' : ' dim') + (dirty ? ' dirty' : '') + (it.conflict ? ' conflict' : ''),
-      draggable: 'true', tabindex: '0', role: 'button', dataset: { key: it.key },
-      title: `${it.key}: ${it.summary}` + (it.team ? `\n${t('Team')}: ${it.team}` : '') + (it.status ? `\n${t('Status')}: ${it.status}` : ''),
-    },
-    el('span', { class: 'card-key', text: it.key }),
-    el('span', { class: 'card-summary', text: it.summary || '' }));
-    if (where === 'pool') {
-      const g = GRIDS[gridNo];
-      const known = [g.x, g.y].filter(f => it[f] != null).map(f => `${FIELD_SHORT[f]} ${fmtValue(it[f])}`);
-      if (known.length) c.append(el('span', { class: 'card-values', text: known.join(' · ') }));
-      if (it.team) c.append(el('span', { class: 'card-team', text: it.team }));
-    }
-    return c;
-  }
-
-  function renderRanking() {
-    const req = state.settings.required;
-    const visible = state.items.filter(i => i.state !== 'hidden' && i.inCsv);
-    const ranked = Core.rank(visible);
-    const body = $('#rankBody');
-    body.innerHTML = '';
-    let n = 0;
-    for (const it of ranked) {
-      const s = Core.score(it);
-      const required = it.state === 'required';
-      if (required || s != null) n++;
-      const link = jiraLink(it.key);
-      const dirty = Core.isDirty(it, req);
-      const tr = el('tr', { class: (matches(it) ? '' : 'dim') + (required ? ' required' : '') + (dirty ? ' dirty' : '') + (it.conflict ? ' conflict' : ''), dataset: { key: it.key }, tabindex: '0' },
-        el('td', { class: 'num', text: required || s != null ? String(n) : '' }),
-        el('td', { class: 'key' }, link ? el('a', { href: link, target: '_blank', rel: 'noopener', text: it.key }) : it.key),
-        el('td', { class: 'summary', text: it.summary }),
-        el('td', { text: it.team || it.assignee || '' }),
-        ...Core.VALUE_FIELDS.map(f => el('td', { class: 'num', text: fmtValue(it[f]) })),
-        el('td', { class: 'num score' }, required ? el('span', { class: 'badge badge-required', text: t('Erforderlich') }) : fmtScore(s),
-          dirty ? el('span', { class: 'dirty-dot', title: t('Noch nicht in die CSV geschrieben') }) : null,
-          it.conflict ? el('span', { class: 'conflict-mark', title: t('Konflikt beim letzten Einlesen: dein Wert wurde behalten'), text: '!' }) : null));
-      body.append(tr);
-    }
-    $('#rankCount').textContent = `(${ranked.length})`;
-
-    const hidden = state.items.filter(i => i.state === 'hidden' && i.inCsv).sort((a, b) => Core.naturalCompare(a.key, b.key));
-    $('#hiddenCount').textContent = `(${hidden.length})`;
-    const hl = $('#hiddenList');
-    hl.innerHTML = '';
-    for (const it of hidden) {
-      hl.append(el('li', { class: matches(it) ? '' : 'dim', dataset: { key: it.key } },
-        el('button', { type: 'button', class: 'small', onclick: () => setItemState(it.key, 'open') }, t('Einblenden')),
-        el('span', { class: 'key', text: it.key }), ' ', el('span', { text: it.summary }),
-        it.labels.length ? el('span', { class: 'labels', text: it.labels.join(', ') }) : null));
-    }
-
+  /** Teile der App in der Liste des Rasters: Label-Schalter und Tickets, die nicht mehr in der CSV stehen. */
+  function renderExtras() {
     const gone = state.items.filter(i => !i.inCsv).sort((a, b) => Core.naturalCompare(a.key, b.key));
     $('#goneBox').hidden = !gone.length;
     $('#goneCount').textContent = `(${gone.length})`;
@@ -438,8 +413,8 @@
     gl.innerHTML = '';
     for (const it of gone) {
       gl.append(el('li', { dataset: { key: it.key } },
-        el('button', { type: 'button', class: 'small', onclick: () => { db().removeItem(it.key); Session.changed(); refresh(); } }, t('Entfernen')),
-        el('span', { class: 'key', text: it.key }), ' ', el('span', { text: it.summary })));
+        el('button', { type: 'button', class: 'sw-btn sw-small', onclick: () => { db().removeItem(it.key); Session.changed(); refresh(); } }, t('Entfernen')),
+        el('span', { class: 'sw-key', text: it.key }), ' ', el('span', { text: it.summary })));
     }
 
     // Labels zum Ausblenden: je Label ein Schalter, wenn es Tickets damit gibt.
@@ -498,196 +473,7 @@
     }
   }
 
-  // ---------- Ticket-Dialog ----------
-
-  function openItem(key) {
-    const it = state.items.find(i => i.key === key);
-    if (!it) return;
-    const scale = state.settings.scale;
-    openDialog((dlg, close) => {
-      const draw = () => {
-        const cur = state.items.find(i => i.key === key) || it;
-        dlg.innerHTML = '';
-        const link = jiraLink(cur.key);
-        dlg.append(el('h2', { class: 'item-title' }, link ? el('a', { href: link, target: '_blank', rel: 'noopener', text: cur.key }) : cur.key, ' ', el('span', { text: cur.summary })));
-        const meta = [
-          cur.issueType && [t('Typ'), cur.issueType], cur.status && [t('Status'), cur.status], cur.team && [t('Team'), cur.team],
-          cur.assignee && [t('Zuständig'), cur.assignee], cur.labels.length && [t('Labels'), cur.labels.join(', ')],
-        ].filter(Boolean);
-        if (meta.length) dlg.append(el('dl', { class: 'item-meta' }, meta.map(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })])));
-
-        const values = el('div', { class: 'item-values' });
-        for (const f of Core.VALUE_FIELDS) {
-          const field = Core.FIELDS.find(x => x.id === f);
-          const id = 'val-' + f;
-          const sel = el('select', { id, disabled: cur.state === 'required' || null });
-          sel.append(el('option', { value: '', text: '–' }));
-          const opts = scale.slice();
-          if (cur[f] != null && !opts.includes(Number(cur[f]))) opts.push(Number(cur[f]));
-          for (const v of opts.sort((a, b) => a - b)) sel.append(el('option', { value: String(v), text: fmtValue(v), selected: cur[f] != null && Number(cur[f]) === v ? true : null }));
-          sel.addEventListener('change', () => { setValues(key, { [f]: sel.value === '' ? null : Number(sel.value) }); draw(); });
-          const base = cur.base[f];
-          const eff = Core.effectiveValues(cur, state.settings.required)[f];
-          const changedHint = (base == null ? null : Number(base)) !== (eff == null ? null : Number(eff))
-            ? el('small', { class: 'was', text: t('in der CSV: {wert}', { wert: fmtValue(base) }) }) : null;
-          values.append(el('label', { for: id }, el('span', { text: t(field.label) }), sel, changedHint));
-        }
-        dlg.append(values);
-        const s = Core.score(Core.effectiveValues(cur, state.settings.required));
-        dlg.append(el('p', { class: 'item-score' }, t('WSJF'), ': ', el('b', { text: fmtScore(s) }),
-          cur.state === 'required' ? el('span', { class: 'hint', text: ' ' + t('(Erforderlich: feste Werte aus den Einstellungen)') }) : null));
-
-        const states = el('div', { class: 'segmented', role: 'radiogroup', 'aria-label': t('Zustand') });
-        for (const [id, label] of [['open', t('Offen')], ['required', t('Erforderlich')], ['hidden', t('Ausgeblendet')]]) {
-          states.append(el('button', { type: 'button', role: 'radio', 'aria-checked': String(cur.state === id), class: cur.state === id ? 'on' : '', dataset: { state: id },
-            onclick: () => { setItemState(key, id); draw(); } }, label));
-        }
-        dlg.append(states);
-        if (cur.description) {
-          // Jira-Wiki-Markup formatiert (WsjfWiki escaped allen Text) oder als Quelltext; die Wahl gilt für die Sitzung.
-          const body = el('div', { class: 'desc' });
-          const show = () => {
-            const raw = state.descRaw;
-            body.className = raw ? 'desc desc-raw' : 'desc wiki';
-            if (raw) body.textContent = cur.description;
-            else body.innerHTML = global.WsjfWiki.render(cur.description, { jiraUrl: state.settings.jiraUrl });
-            for (const b of mode.children) b.setAttribute('aria-checked', String((b.dataset.mode === 'raw') === raw));
-          };
-          const mode = el('div', { class: 'segmented small', role: 'radiogroup', 'aria-label': t('Darstellung der Beschreibung') },
-            el('button', { type: 'button', role: 'radio', dataset: { mode: 'wiki' }, onclick: () => { state.descRaw = false; show(); } }, t('Formatiert')),
-            el('button', { type: 'button', role: 'radio', dataset: { mode: 'raw' }, onclick: () => { state.descRaw = true; show(); } }, t('Quelltext')));
-          dlg.append(el('details', { class: 'item-desc', open: true },
-            el('summary', {}, el('span', { text: t('Beschreibung') }), mode), body));
-          show();
-        }
-        dlg.append(el('div', { class: 'dialog-buttons' },
-          el('button', { type: 'button', class: 'danger-link', onclick: () => { mutate([key], () => db().setValues(key, { ubv: null, rroe: null, tc: null, jobSize: null })); draw(); } }, t('Werte löschen')),
-          el('button', { type: 'button', class: 'primary', onclick: () => close(true) }, t('Schliessen'))));
-      };
-      draw();
-    }, { wide: true });
-  }
-
-  // ---------- Ziehen und Ablegen ----------
-
-  function setupDnd() {
-    // Auf document, damit auch die Leisten neben dem gezogenen Ticket (ausserhalb von #board) Ziele sind.
-    document.addEventListener('dragstart', e => {
-      const c = e.target.closest && e.target.closest('#board .card');
-      if (!c) return;
-      state.dragKey = c.dataset.key;
-      e.dataTransfer.setData('text/plain', c.dataset.key);
-      e.dataTransfer.effectAllowed = 'move';
-      document.body.classList.add('dragging');
-      c.classList.add('drag-source');
-      showStrips(c);
-    });
-    document.addEventListener('dragend', () => {
-      state.dragKey = null;
-      document.body.classList.remove('dragging');
-      hideStrips();
-      document.querySelectorAll('.drag-source, .drop-over').forEach(x => x.classList.remove('drag-source', 'drop-over'));
-    });
-    const target = e => (e.target.closest ? e.target.closest('.cell, .pool, .drop-zone, .strip-zone:not(.current)') : null);
-    document.addEventListener('dragover', e => {
-      if (!state.dragKey) return;
-      edgeScroll(e);
-      const tg = target(e);
-      if (!tg) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      document.querySelectorAll('.drop-over').forEach(x => { if (x !== tg) x.classList.remove('drop-over'); });
-      tg.classList.add('drop-over');
-    });
-    document.addEventListener('dragleave', e => {
-      const tg = target(e);
-      if (tg && !tg.contains(e.relatedTarget)) tg.classList.remove('drop-over');
-    });
-    document.addEventListener('drop', e => {
-      const tg = target(e);
-      if (!tg) return;
-      e.preventDefault();
-      const key = e.dataTransfer.getData('text/plain') || state.dragKey;
-      document.body.classList.remove('dragging');
-      hideStrips();
-      if (!key || !state.items.some(i => i.key === key)) return;
-      dropOn(key, tg);
-    });
-  }
-
-  /** Leisten neben dem gezogenen Ticket (wie in der WSJF-App): rechts die Werte der Zeilen (Spalte bleibt), darunter die
-   *  Werte der Spalten (Zeile bleibt). Ohne Platz im Raster gilt der vorhandene Wert, sonst der kleinste der Skala. */
-  function showStrips(card) {
-    const cell = card.closest('.cell');
-    const pool = card.closest('.pool');
-    const n = cell ? cell.dataset.grid : pool ? pool.dataset.pool : null;
-    if (!n) return;
-    const g = GRIDS[n];
-    const scale = state.settings.scale;
-    const it = state.items.find(i => i.key === card.dataset.key);
-    const pick = f => (it && it[f] != null && scale.includes(Number(it[f])) ? Number(it[f]) : scale[0]);
-    const cur = cell ? { x: Number(cell.dataset.x), y: Number(cell.dataset.y) } : { x: pick(g.x), y: pick(g.y) };
-    const label = f => t(Core.FIELDS.find(x => x.id === f).label);
-    for (const axis of ['y', 'x']) {
-      const strip = $(axis === 'y' ? '#stripY' : '#stripX');
-      strip.querySelector('.strip-label').textContent = label(g[axis]);
-      const zones = strip.querySelector('.strip-zones');
-      zones.innerHTML = '';
-      for (const v of scale) {
-        const isCur = !!cell && v === cur[axis];
-        zones.append(el('div', {
-          class: 'strip-zone' + (isCur ? ' current' : ''),
-          dataset: { grid: n, axis, value: String(v), x: String(axis === 'x' ? v : cur.x), y: String(axis === 'y' ? v : cur.y) },
-          title: `${label(g.x)}: ${fmtValue(axis === 'x' ? v : cur.x)} · ${label(g.y)}: ${fmtValue(axis === 'y' ? v : cur.y)}`,
-        }, fmtValue(v)));
-      }
-      strip.hidden = false;
-    }
-    placeStrips(card.getBoundingClientRect());
-  }
-
-  function placeStrips(r) {
-    const sy = $('#stripY');
-    const sx = $('#stripX');
-    const W = window.innerWidth;
-    const H = window.innerHeight;
-    const gap = 6;
-    let left = r.right + gap;
-    if (left + sy.offsetWidth > W - 4) left = Math.max(4, r.left - sy.offsetWidth - gap);
-    sy.style.left = left + 'px';
-    sy.style.top = Math.max(4, Math.min(r.top, H - sy.offsetHeight - 4)) + 'px';
-    let top = r.bottom + gap;
-    if (top + sx.offsetHeight > H - 4) top = Math.max(4, r.top - sx.offsetHeight - gap);
-    let sxLeft = Math.max(4, Math.min(r.left, W - sx.offsetWidth - 4));
-    // Nicht über die andere Leiste legen: daneben ausweichen, sonst unter sie.
-    const ry = { left, right: left + sy.offsetWidth, top: parseFloat(sy.style.top), bottom: parseFloat(sy.style.top) + sy.offsetHeight };
-    const overlaps = (l, tp) => l < ry.right && l + sx.offsetWidth > ry.left && tp < ry.bottom && tp + sx.offsetHeight > ry.top;
-    if (overlaps(sxLeft, top)) {
-      if (ry.left - gap - sx.offsetWidth >= 4) sxLeft = ry.left - gap - sx.offsetWidth;
-      else if (ry.right + gap + sx.offsetWidth <= W - 4) sxLeft = ry.right + gap;
-      else top = Math.min(ry.bottom + gap, H - sx.offsetHeight - 4);
-    }
-    sx.style.top = top + 'px';
-    sx.style.left = sxLeft + 'px';
-  }
-
-  function hideStrips() {
-    $('#stripY').hidden = true;
-    $('#stripX').hidden = true;
-  }
-
-  /** Beim Ziehen nahe am linken oder rechten Rand eines Rasters seitlich weiterscrollen. */
-  function edgeScroll(e) {
-    const EDGE = 70;
-    for (const sc of document.querySelectorAll('.grid-scroll')) {
-      const r = sc.getBoundingClientRect();
-      if (e.clientY < r.top || e.clientY > r.bottom) continue;
-      if (e.clientX < r.left + EDGE && sc.scrollLeft > 0) sc.scrollLeft -= 24;
-      else if (e.clientX > r.right - EDGE && sc.scrollLeft + sc.clientWidth < sc.scrollWidth) sc.scrollLeft += 24;
-    }
-  }
-
-  // ---------- Präsentationsmodus ----------
+  // ---------- Präsentationsmodus (im Raster) ----------
 
   const ZOOM_MIN = 0.75;
   const ZOOM_MAX = 2;
@@ -695,65 +481,6 @@
   function presentZoom() {
     const z = Number(loadPrefs().presentZoom);
     return Number.isFinite(z) && z >= ZOOM_MIN && z <= ZOOM_MAX ? z : 1;
-  }
-
-  /** Grösse im Präsentationsmodus: nach der Breite des Bildschirms (1 bis 1.6) mal der eigenen Wahl (75 % bis 200 %). */
-  function applyZoom() {
-    const user = presentZoom();
-    const base = Math.min(1.6, Math.max(1, window.innerWidth / 1600));
-    $('#pairs').style.zoom = state.presenting ? String(Math.round(base * user * 100) / 100) : '';
-    $('#zoomValue').textContent = Math.round(user * 100) + ' %';
-  }
-
-  function setZoom(z) {
-    const prefs = loadPrefs();
-    prefs.presentZoom = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100) / 100;
-    savePrefs(prefs);
-    applyZoom();
-  }
-
-  function setPresenting(on) {
-    if (on === state.presenting || (on && !db())) return;
-    state.presenting = on;
-    document.body.classList.toggle('presenting', on);
-    $('#presentTrain').textContent = Session.info().trainName;
-    if (on) {
-      hideMenu();
-      const root = document.documentElement;
-      if (root.requestFullscreen && !document.fullscreenElement) root.requestFullscreen().catch(() => {});
-    } else if (document.fullscreenElement && document.exitFullscreen) {
-      document.exitFullscreen().catch(() => {});
-    }
-    applyZoom();
-  }
-
-  function dropOn(key, tg) {
-    if (tg.classList.contains('strip-zone')) {
-      const g = GRIDS[tg.dataset.grid];
-      const it = state.items.find(i => i.key === key);
-      mutate([key], () => {
-        db().setValues(key, { [g.x]: Number(tg.dataset.x), [g.y]: Number(tg.dataset.y) });
-        if (it && it.state !== 'open') db().setState(key, 'open');
-      });
-    } else if (tg.classList.contains('cell')) {
-      const g = GRIDS[tg.dataset.grid];
-      const it = state.items.find(i => i.key === key);
-      mutate([key], () => {
-        db().setValues(key, { [g.x]: Number(tg.dataset.x), [g.y]: Number(tg.dataset.y) });
-        if (it && it.state !== 'open') db().setState(key, 'open');
-      });
-    } else if (tg.classList.contains('pool')) {
-      const g = GRIDS[tg.dataset.pool];
-      setValues(key, { [g.x]: null, [g.y]: null });
-    } else if (tg.dataset.zone === 'required') {
-      setItemState(key, 'required');
-      toast(t('{key} ist erforderlich und steht oben in der Liste.', { key }));
-    } else if (tg.dataset.zone === 'hidden') {
-      setItemState(key, 'hidden');
-    } else if (tg.dataset.zone === 'clear') {
-      setValues(key, { ubv: null, rroe: null, tc: null, jobSize: null });
-      toast(t('Werte von {key} gelöscht. Ctrl+Z macht es rückgängig.', { key }));
-    }
   }
 
   // ---------- CSV ----------
@@ -787,6 +514,7 @@
     if (picked.handle) await Session.rememberCsv(picked.handle);
     else await Session.rememberCsv(null);
     state.undo = [];
+    group = null;
     Session.changed();
     refresh();
     const parts = [
@@ -1045,16 +773,10 @@
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* nur für diese Sitzung */ }
   }
 
-  /** Farbe je Raster auf die Seite legen (CSS-Variablen --hue und --sat). */
+  /** Farbe je Raster: an das Raster geben (es setzt die CSS-Variablen --hue und --sat). */
   function applyGridColors(colors) {
-    const c = colors || loadPrefs().gridColors;
-    for (const n of [1, 2]) {
-      const col = Palette.byId(c[n]);
-      const grid = $('#grid' + n);
-      grid.style.setProperty('--hue', col.h);
-      grid.style.setProperty('--sat', col.s + '%');
-      grid.dataset.color = col.id;
-    }
+    gridOptions.prefs = Object.assign({}, gridOptions.prefs, { colors: Object.assign({}, colors || loadPrefs().gridColors) });
+    grid.refresh();
   }
 
   function openPreferences() {
@@ -1131,10 +853,6 @@
     $('#helpBtn').addEventListener('click', openHelp);
     $('#emptyImportBtn').addEventListener('click', () => importCsv(false).catch(fail));
     $('#writeCsvBtn').addEventListener('click', () => writeCsv().catch(fail));
-    $('#showAllBtn').addEventListener('click', () => {
-      const keys = state.items.filter(i => i.state === 'hidden').map(i => i.key);
-      mutate(keys, () => db().setStates(keys, 'open'));
-    });
     $('#removeGoneBtn').addEventListener('click', async () => {
       const gone = state.items.filter(i => !i.inCsv);
       const ok = await ask({ title: t('Entfernen?'), text: tn('{n} Ticket, das nicht mehr in der CSV steht, wird entfernt.', '{n} Tickets, die nicht mehr in der CSV stehen, werden entfernt.', gone.length), buttons: [{ id: 'yes', label: t('Entfernen'), primary: true }] });
@@ -1143,7 +861,7 @@
       Session.changed();
       refresh();
     });
-    $('#search').addEventListener('input', e => { state.search = e.target.value; renderGrids(); renderRanking(); });
+    $('#search').addEventListener('input', e => { state.search = e.target.value; grid.refresh(); });
     $('#welcomeForm').addEventListener('submit', e => {
       e.preventDefault();
       const name = $('#welcomeName').value.trim();
@@ -1151,39 +869,17 @@
     });
     $('#welcomeOpenBtn').addEventListener('click', () => Session.trainFromDbFile().catch(fail));
 
-    const board = $('#board');
-    board.addEventListener('click', e => {
-      if (e.target.closest('a')) return;
-      const c = e.target.closest('.card, #rankBody tr');
-      if (c && c.dataset.key) openItem(c.dataset.key);
-    });
-    board.addEventListener('keydown', e => {
-      const c = e.target.closest('.card, #rankBody tr');
-      if (c && c.dataset.key && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openItem(c.dataset.key); }
-    });
-    setupDnd();
+    // Das Raster mit Liste und Präsentationsmodus (grid.js); die Teile der App kommen in seine Plätze.
+    grid = global.SafeWsjf.create($('#wsjf'), gridOptions);
+    $('#wsjf [data-slot="rank-actions"]').append($('#labelToggles'), $('#writeCsvBtn'));
+    $('#wsjf [data-slot="rank-after"]').append($('#goneBox'));
+    $('#appSlots').remove();
+    $('#presentBtn').addEventListener('click', () => { if (db()) grid.present(true); });
 
-    $('#presentBtn').addEventListener('click', () => setPresenting(true));
-    $('#presentExit').addEventListener('click', () => setPresenting(false));
-    $('#zoomIn').addEventListener('click', () => setZoom(presentZoom() + 0.1));
-    $('#zoomOut').addEventListener('click', () => setZoom(presentZoom() - 0.1));
-    document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && state.presenting) setPresenting(false); });
-    window.addEventListener('resize', applyZoom);
-    document.addEventListener('wheel', e => {
-      if (!state.presenting || !e.ctrlKey) return;
-      e.preventDefault();
-      setZoom(presentZoom() + (e.deltaY < 0 ? 0.1 : -0.1));
-    }, { passive: false });
-
+    // P, +, −, Esc und Ctrl+Z behandelt das Raster.
     document.addEventListener('keydown', e => {
       const inField = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement && document.activeElement.tagName);
-      if ($('#dialog').open) return;
-      if (!inField && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        if (e.key === 'p' || e.key === 'P') { e.preventDefault(); setPresenting(!state.presenting); return; }
-        if (state.presenting && e.key === 'Escape' && $('#menu').hidden) { setPresenting(false); return; }
-        if (state.presenting && (e.key === '+' || e.key === '=')) { e.preventDefault(); setZoom(presentZoom() + 0.1); return; }
-        if (state.presenting && e.key === '-') { e.preventDefault(); setZoom(presentZoom() - 0.1); return; }
-      }
+      if (document.querySelector('dialog[open]')) return;
       if (e.altKey && !e.ctrlKey && /^[0-9]$/.test(e.key)) {
         e.preventDefault();
         if (e.key === '0') { trainMenu(); return; }
@@ -1191,7 +887,6 @@
         if (tr) Session.switchTrain(tr.id).catch(fail);
         return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !inField && db()) { e.preventDefault(); undo(); return; }
       if (e.key === '/' && !inField) { e.preventDefault(); $('#search').focus(); }
     });
   }
@@ -1206,7 +901,7 @@
       await Session.start({
         ask,
         toast,
-        changed: () => { state.undo = []; refresh(); },
+        changed: () => { state.undo = []; group = null; refresh(); },
         status: renderStatus,
       });
     } catch (e) { fail(e); }
@@ -1214,6 +909,6 @@
     document.body.dataset.ready = 'true';
   }
 
-  global.WsjfApp = { refresh, importCsv, writeCsv, openItem, dropOn: (key, sel) => dropOn(key, document.querySelector(sel)), undo };
+  global.WsjfApp = { refresh, importCsv, writeCsv, undo, dropOn: (key, sel) => grid.drop(key, document.querySelector(sel)), get grid() { return grid; } };
   main();
 })(window);

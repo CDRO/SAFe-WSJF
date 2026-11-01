@@ -1,0 +1,291 @@
+/* SAFe WSJF – Darstellung des Rasters (grid.js). Alles hängt an .safe-wsjf; die Klassen tragen den Vorsatz sw-.
+   Ein Gastgeber setzt die Variablen auf .safe-wsjf (oder einem Vorfahren über die gleichen Namen) für Farben, Schrift
+   und Grössen. Helles und dunkles Schema wie die App. */
+.safe-wsjf {
+  --sw-bg: #f6f7f9;            /* Hintergrund im Präsentationsmodus, gesperrte Leistenfelder */
+  --sw-panel: #ffffff;         /* Flächen: Rasterpaare, Liste, Dialog, Leisten */
+  --sw-text: #1c2430;
+  --sw-muted: #5b6676;
+  --sw-line: #d9dee5;
+  --sw-accent: #2563eb;
+  --sw-accent-text: #ffffff;
+  --sw-accent-soft: #e6eefc;
+  --sw-warn: #b45309;          /* ungeschriebene Änderung */
+  --sw-danger: #b91c1c;
+  --sw-required: #7c3aed;      /* «Erforderlich» */
+  --sw-card: #ffffff;
+  --sw-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 2px 8px rgba(0, 0, 0, .05);
+  --sw-radius: 8px;
+  --sw-font: inherit;          /* Schrift: vom Gastgeber geerbt */
+  --sw-font-size: inherit;
+  --sw-mono: ui-monospace, Consolas, monospace;
+  --sw-small: 12px;            /* Schrift auf den Tickets, Köpfe */
+  --sw-col-min: 220px;         /* Mindestbreite einer Spalte im Raster (mind. 50 Zeichen auf drei Zeilen) */
+  --sw-cell-min-height: 54px;
+  --sw-pool-width: 260px;      /* Liste «Offen» neben dem Raster */
+  --sw-pool-height: 560px;
+  --sw-l-top: 90%;             /* Helligkeit der Zellen: oben links, Abnahme über die Zeilen und über die Spalten */
+  --sw-l-y: 50%;
+  --sw-l-x: 20%;
+  font-family: var(--sw-font);
+  font-size: var(--sw-font-size);
+  color: var(--sw-text);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .safe-wsjf {
+    --sw-bg: #12161c;
+    --sw-panel: #1a2029;
+    --sw-text: #e6eaf0;
+    --sw-muted: #9aa5b5;
+    --sw-line: #2d3644;
+    --sw-accent: #5b8cf5;
+    --sw-accent-text: #0b1220;
+    --sw-accent-soft: #1f2b44;
+    --sw-warn: #fbbf24;
+    --sw-danger: #f87171;
+    --sw-required: #a78bfa;
+    --sw-card: #222a35;
+    --sw-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+    --sw-l-top: 42%;
+    --sw-l-y: 24%;
+    --sw-l-x: 10%;
+  }
+}
+
+.safe-wsjf, .safe-wsjf * { box-sizing: border-box; }
+.safe-wsjf [hidden] { display: none !important; }
+.safe-wsjf .sw-h { font-size: 15px; margin: 0 0 8px; }
+.safe-wsjf .sw-count { color: var(--sw-muted); font-weight: normal; margin-left: .3em; }
+.safe-wsjf .sw-hint { color: var(--sw-muted); font-size: var(--sw-small); }
+.safe-wsjf a { color: var(--sw-accent); }
+
+.safe-wsjf .sw-btn {
+  font: inherit; color: inherit;
+  background: var(--sw-panel);
+  border: 1px solid var(--sw-line);
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.safe-wsjf .sw-btn:hover:not([disabled]) { border-color: var(--sw-accent); }
+.safe-wsjf .sw-btn.sw-primary { background: var(--sw-accent); border-color: var(--sw-accent); color: var(--sw-accent-text); }
+.safe-wsjf .sw-btn.sw-small { padding: 2px 8px; font-size: var(--sw-small); }
+.safe-wsjf .sw-btn.sw-danger-link { background: none; border: 0; padding: 0; color: var(--sw-danger); text-decoration: underline; margin-right: auto; }
+.safe-wsjf select { font: inherit; color: inherit; background: var(--sw-panel); border: 1px solid var(--sw-line); border-radius: 6px; padding: 5px 8px; }
+.safe-wsjf :focus-visible { outline: 2px solid var(--sw-accent); outline-offset: 1px; }
+
+/* ---------- Raster ---------- */
+.sw-pairs { display: grid; grid-template-columns: 1fr; gap: 16px; }
+@media (min-width: 1800px) { .sw-pairs { grid-template-columns: 1fr 1fr; } }
+.sw-pair {
+  display: grid;
+  grid-template-columns: minmax(200px, var(--sw-pool-width)) 1fr;
+  gap: 12px;
+  background: var(--sw-panel);
+  border: 1px solid var(--sw-line);
+  border-radius: var(--sw-radius);
+  padding: 12px;
+}
+.sw-pool { display: flex; flex-direction: column; min-height: 0; border-radius: 6px; padding: 4px; }
+.sw-pool-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; max-height: var(--sw-pool-height); padding: 2px; }
+.sw-pool-empty { color: var(--sw-muted); font-style: italic; }
+
+.sw-grid-wrap { min-width: 0; }
+.sw-grid-title { display: flex; justify-content: space-between; color: var(--sw-muted); font-weight: 600; margin-bottom: 4px; }
+.sw-grid {
+  display: grid;
+  grid-template-columns: 40px repeat(var(--cols), minmax(var(--sw-col-min), 1fr));
+  gap: 3px;
+}
+.sw-grid-scroll { overflow-x: auto; padding-bottom: 4px; }
+.sw-grid .sw-head-y { position: sticky; left: 0; z-index: 2; background: var(--sw-panel); }
+.sw-grid .sw-head { display: flex; align-items: center; justify-content: center; color: var(--sw-muted); font-weight: 600; font-size: var(--sw-small); }
+.sw-grid .sw-head-x { height: 22px; }
+.sw-cell {
+  min-height: var(--sw-cell-min-height);
+  border-radius: 5px;
+  border: 1px solid var(--sw-line);
+  /* Wie in der WSJF-App: hell oben links, dunkel unten rechts (y zählt stärker). Farbton aus den Präferenzen. */
+  background: hsl(var(--hue, 205), var(--sat, 50%), calc(var(--sw-l-top) - var(--ny, 0) * var(--sw-l-y) - var(--nx, 0) * var(--sw-l-x)));
+  padding: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sw-card {
+  background: var(--sw-card);
+  border: 1px solid var(--sw-line);
+  border-left: 3px solid var(--sw-accent);
+  border-radius: 5px;
+  padding: 4px 6px;
+  box-shadow: var(--sw-shadow);
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  user-select: none;
+}
+.sw-card:hover { border-color: var(--sw-accent); }
+.sw-readonly .sw-card { cursor: pointer; }
+.sw-card-key { font-weight: 600; font-size: var(--sw-small); }
+/* Mindestens 50 Zeichen der Zusammenfassung lesbar: bis zu drei Zeilen in der Spaltenbreite. */
+.sw-card-summary {
+  font-size: var(--sw-small); color: var(--sw-muted); overflow: hidden; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+}
+.sw-card-values, .sw-card-team { font-size: 11px; color: var(--sw-muted); }
+.sw-card.sw-dirty { border-left-color: var(--sw-warn); }
+.sw-card.sw-conflict { border-left-color: var(--sw-danger); }
+.safe-wsjf .sw-dim { opacity: .3; }
+.sw-card.sw-drag-source { opacity: .4; }
+
+.sw-drop-over { outline: 2px dashed var(--sw-accent); outline-offset: -2px; background-color: var(--sw-accent-soft); }
+
+/* Ablagefelder erscheinen nur beim Ziehen. */
+.sw-drop-zones {
+  display: none;
+  position: fixed;
+  left: 50%;
+  bottom: 44px;
+  transform: translateX(-50%);
+  gap: 12px;
+  z-index: 30;
+}
+.sw-dragging .sw-drop-zones { display: flex; }
+.sw-drop-zone {
+  width: 180px; padding: 12px; border-radius: var(--sw-radius); border: 2px dashed; text-align: center;
+  background: var(--sw-panel); box-shadow: var(--sw-shadow); display: flex; flex-direction: column;
+}
+.sw-drop-zone span { font-size: var(--sw-small); color: var(--sw-muted); }
+.sw-zone-required { border-color: var(--sw-required); color: var(--sw-required); }
+.sw-zone-hidden { border-color: var(--sw-muted); }
+.sw-zone-trash { border-color: var(--sw-danger); color: var(--sw-danger); }
+
+/* Leisten neben dem gezogenen Ticket (wie in der WSJF-App) */
+.sw-strip {
+  position: fixed; z-index: 40; display: flex; gap: 6px; padding: 6px;
+  background: var(--sw-panel); border: 1px solid var(--sw-line); border-radius: var(--sw-radius); box-shadow: var(--sw-shadow);
+}
+.sw-strip-y { flex-direction: row; align-items: center; }
+.sw-strip-y .sw-strip-label { writing-mode: vertical-rl; transform: rotate(180deg); }
+.sw-strip-x { flex-direction: column; }
+.sw-strip-label { font-size: var(--sw-small); font-weight: 600; color: var(--sw-muted); white-space: nowrap; }
+.sw-strip-zones { display: flex; gap: 4px; }
+.sw-strip-y .sw-strip-zones { flex-direction: column; }
+.sw-strip-zone {
+  min-width: 40px; height: 34px; display: flex; align-items: center; justify-content: center;
+  border: 1px dashed var(--sw-line); border-radius: 5px; font-weight: 600;
+}
+.sw-strip-zone.sw-current { background: var(--sw-bg); color: var(--sw-muted); border-style: solid; opacity: .6; }
+
+/* ---------- Präsentationsmodus ---------- */
+/* Vollbild des Containers: er bekommt Hintergrund und scrollt. */
+:fullscreen:has(> .safe-wsjf) { overflow: auto; background: var(--sw-bg, #f6f7f9); }
+.sw-present-bar { display: none; }
+.sw-presenting { background: var(--sw-bg); min-height: 100%; }
+.sw-presenting .sw-present-bar {
+  display: flex; align-items: center; gap: 8px; padding: 6px 16px;
+  background: var(--sw-panel); border-bottom: 1px solid var(--sw-line); position: sticky; top: 0; z-index: 20;
+}
+.sw-present-bar .sw-spacer { flex: 1; }
+.sw-zoom-value { min-width: 4em; text-align: center; font-variant-numeric: tabular-nums; }
+.sw-presenting .sw-pairs { grid-template-columns: 1fr; }
+.sw-presenting .sw-pair { grid-template-columns: minmax(220px, 280px) 1fr; }
+.sw-presenting .sw-grid { --sw-col-min: 240px; }
+.sw-presenting .sw-card-key { font-size: 14px; }
+.sw-presenting .sw-card-summary { font-size: 13px; }
+.sw-presenting .sw-grid-title { font-size: 16px; }
+.sw-presenting .sw-grid .sw-head { font-size: 14px; }
+/* Die Liste bleibt erreichbar, steht aber deutlich im Hintergrund. */
+.sw-presenting .sw-ranking { margin-top: 32px; opacity: .75; font-size: 13px; }
+
+/* ---------- Liste ---------- */
+.sw-ranking { background: var(--sw-panel); border: 1px solid var(--sw-line); border-radius: var(--sw-radius); padding: 12px; }
+.sw-ranking-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sw-rank-actions { display: flex; gap: 8px; align-items: center; }
+.sw-rank-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.sw-rank-table th, .sw-rank-table td { padding: 5px 8px; border-bottom: 1px solid var(--sw-line); text-align: left; vertical-align: top; }
+.sw-rank-table th { color: var(--sw-muted); font-size: var(--sw-small); font-weight: 600; }
+.sw-rank-table .sw-num { text-align: right; white-space: nowrap; }
+.sw-rank-table td.sw-key { white-space: nowrap; font-weight: 600; }
+.sw-rank-table tbody tr { cursor: pointer; }
+.sw-rank-table tbody tr:hover { background: var(--sw-accent-soft); }
+.sw-rank-table tr.sw-required td:first-child { box-shadow: inset 3px 0 var(--sw-required); }
+.sw-score { font-weight: 600; }
+.sw-badge { display: inline-block; padding: 0 6px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.sw-badge-required { background: var(--sw-required); color: #fff; }
+.sw-dirty-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--sw-warn); margin-left: 6px; vertical-align: middle; }
+.sw-conflict-mark { color: var(--sw-danger); font-weight: 700; margin-left: 4px; }
+
+.sw-side-box { margin-top: 12px; }
+.sw-side-box summary { cursor: pointer; font-weight: 600; }
+.sw-side-actions { margin: 6px 0; }
+.sw-plain-list { list-style: none; padding: 0; margin: 0; }
+.sw-plain-list li { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; border-bottom: 1px solid var(--sw-line); }
+.sw-plain-list .sw-key { font-weight: 600; }
+.sw-plain-list .sw-labels { color: var(--sw-muted); font-size: var(--sw-small); margin-left: auto; }
+
+/* ---------- Ticket-Dialog ---------- */
+.sw-dialog {
+  border: 1px solid var(--sw-line); border-radius: var(--sw-radius); padding: 20px; width: min(820px, 96vw);
+  background: var(--sw-panel); color: var(--sw-text); box-shadow: var(--sw-shadow);
+  font-family: var(--sw-font); font-size: var(--sw-font-size);
+}
+.sw-dialog::backdrop { background: rgba(0, 0, 0, .35); }
+.sw-dialog h2 { font-size: 17px; margin: 0 0 12px; }
+.sw-dialog-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.sw-item-title { display: flex; gap: 8px; }
+.sw-item-meta { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0 0 12px; font-size: 13px; }
+.sw-item-meta dt { color: var(--sw-muted); }
+.sw-item-meta dd { margin: 0; }
+.sw-item-values { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.sw-item-values label { display: flex; flex-direction: column; gap: 4px; font-size: var(--sw-small); color: var(--sw-muted); }
+.sw-item-values .sw-was { color: var(--sw-warn); }
+.sw-item-score { font-size: 16px; }
+.sw-segmented { display: inline-flex; border: 1px solid var(--sw-line); border-radius: 6px; overflow: hidden; }
+.safe-wsjf .sw-segmented .sw-btn { border: 0; border-radius: 0; border-right: 1px solid var(--sw-line); }
+.safe-wsjf .sw-segmented .sw-btn:last-child { border-right: 0; }
+.safe-wsjf .sw-segmented .sw-btn.sw-on,
+.safe-wsjf .sw-segmented .sw-btn[aria-checked="true"] { background: var(--sw-accent); color: var(--sw-accent-text); }
+.sw-item-desc { margin-top: 12px; }
+.sw-item-desc summary { display: flex; align-items: center; gap: 12px; cursor: pointer; font-weight: 600; }
+.safe-wsjf .sw-item-desc .sw-segmented.sw-small .sw-btn { padding: 1px 8px; font-size: var(--sw-small); font-weight: normal; }
+.sw-item-desc .sw-desc { max-height: 360px; overflow: auto; font-size: 13px; padding: 8px 12px; margin-top: 6px; border: 1px solid var(--sw-line); border-radius: 6px; }
+.sw-item-desc .sw-desc-raw { white-space: pre-wrap; font-family: var(--sw-mono); font-size: var(--sw-small); }
+
+/* Beschreibung (Jira-Wiki-Markup aus wiki.js; ein Gastgeber mit eigenem renderDescription stylt sein HTML selbst) */
+.sw-wiki > :first-child { margin-top: 0; }
+.sw-wiki > :last-child { margin-bottom: 0; }
+.sw-wiki p { margin: 0 0 8px; }
+.sw-wiki h1, .sw-wiki h2, .sw-wiki h3, .sw-wiki h4, .sw-wiki h5, .sw-wiki h6 { margin: 12px 0 6px; line-height: 1.25; }
+.sw-wiki h1 { font-size: 18px; } .sw-wiki h2 { font-size: 16px; } .sw-wiki h3 { font-size: 15px; }
+.sw-wiki h4, .sw-wiki h5, .sw-wiki h6 { font-size: 13px; }
+.sw-wiki ul, .sw-wiki ol { margin: 0 0 8px; padding-left: 22px; }
+.sw-wiki ul ul, .sw-wiki ol ol, .sw-wiki ul ol, .sw-wiki ol ul { margin: 2px 0; }
+.sw-wiki code { font: 12px var(--sw-mono); background: var(--sw-accent-soft); padding: 0 3px; border-radius: 3px; }
+.sw-wiki pre { margin: 0 0 8px; padding: 8px; background: var(--sw-bg); border: 1px solid var(--sw-line); border-radius: 5px; overflow: auto; }
+.sw-wiki pre code { background: none; padding: 0; white-space: pre; }
+.sw-wiki .wiki-code-title { font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+.sw-wiki blockquote { margin: 0 0 8px; padding: 2px 10px; border-left: 3px solid var(--sw-line); color: var(--sw-muted); }
+.sw-wiki hr { border: 0; border-top: 1px solid var(--sw-line); margin: 10px 0; }
+.sw-wiki .wiki-table { border-collapse: collapse; margin: 0 0 8px; }
+.sw-wiki .wiki-table th, .sw-wiki .wiki-table td { border: 1px solid var(--sw-line); padding: 3px 8px; text-align: left; vertical-align: top; }
+.sw-wiki .wiki-table th { background: var(--sw-accent-soft); }
+.sw-wiki .wiki-panel { margin: 0 0 8px; padding: 8px 10px; border: 1px solid var(--sw-line); border-left-width: 4px; border-radius: 5px; }
+.sw-wiki .wiki-panel-title { font-weight: 600; margin-bottom: 4px; }
+.sw-wiki .wiki-info { border-left-color: #2563eb; }
+.sw-wiki .wiki-note { border-left-color: #7c3aed; }
+.sw-wiki .wiki-tip { border-left-color: #16a34a; }
+.sw-wiki .wiki-warning { border-left-color: #dc2626; }
+.sw-wiki .wiki-mention { background: var(--sw-accent-soft); color: var(--sw-accent); border-radius: 10px; padding: 0 6px; }
+.sw-wiki .wiki-image { color: var(--sw-muted); font-style: italic; }
+
+@media print {
+  .sw-pairs, .sw-rank-actions, .sw-side-box, .sw-present-bar, .sw-drop-zones, .sw-strip { display: none !important; }
+  .sw-ranking { border: 0; }
+}
